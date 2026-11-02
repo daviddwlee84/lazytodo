@@ -25,4 +25,7 @@ jobs:
       - run: go test -race ./...
       - run: go build -o bin/lazytodo ./cmd/lazytodo
       - run: python3 scripts/pty_smoke.py bin/lazytodo
+      - run: python3 scripts/config_edit_smoke.py bin/lazytodo
+      - run: python3 scripts/setup_smoke.py bin/lazytodo
+      - run: python3 scripts/repo_context_smoke.py bin/lazytodo
       - run: python3 scripts/check_todo.py

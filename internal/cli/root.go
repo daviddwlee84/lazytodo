@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -16,7 +15,6 @@ import (
 	"github.com/spf13/cobra"
 	"lazytodo/internal/config"
 	"lazytodo/internal/model"
-	"lazytodo/internal/search"
 	"lazytodo/internal/service"
 	"lazytodo/internal/skill"
 	"lazytodo/internal/source"
@@ -59,22 +57,11 @@ func NewCommand() *cobra.Command {
 		if e != nil {
 			return nil, service.Fail("config", e.Error())
 		}
-		explicit := c.Flags().Changed("config")
-		if !explicit {
-			if v, ok := os.LookupEnv("LAZYTODO_CONFIG"); ok {
-				configPath = v
-				explicit = true
-			}
+		selected, explicit, e := config.SelectPath(configPath, c.Flags().Changed("config"))
+		if e != nil {
+			return nil, service.Fail("config", e.Error())
 		}
-		if explicit {
-			if configPath == "" {
-				return nil, service.Fail("config", "explicit config path cannot be empty")
-			}
-			paths.Config, e = filepath.Abs(configPath)
-			if e != nil {
-				return nil, e
-			}
-		}
+		paths.Config = selected
 		var cp, ip *string
 		if c.Flags().Changed("color") {
 			cp = &color
@@ -85,11 +72,6 @@ func NewCommand() *cobra.Command {
 		cfg, e := config.LoadWithOverrides(paths.Config, explicit, cp, ip)
 		if e != nil {
 			return nil, service.Fail("config", e.Error())
-		}
-		for _, v := range cfg.Views {
-			if _, e = search.Parse(v.Query); e != nil {
-				return nil, service.Fail("config", "view "+v.Name+": "+e.Error())
-			}
 		}
 		return service.New(cfg, paths, source.New()), nil
 	}
@@ -130,7 +112,7 @@ func NewCommand() *cobra.Command {
 	query.Flags().IntVar(&limit, "limit", 50, "Maximum returned items (1..1000)")
 	query.Flags().IntVar(&offset, "offset", 0, "Result offset")
 	query.Flags().StringVar(&revision, "revision", "", "Require a previous query revision when paging")
-	query.Flags().StringVar(&viewName, "view", "", "Saved view (All, Pinned, or configured name)")
+	query.Flags().StringVar(&viewName, "view", "", "Saved view (Open, All, Pinned, or configured name)")
 	query.RunE = func(c *cobra.Command, a []string) error {
 		svc, e := initialize(c)
 		if e != nil {
@@ -143,6 +125,10 @@ func NewCommand() *cobra.Command {
 		if viewName != "" {
 			base := ""
 			found := viewName == "All"
+			if viewName == "Open" {
+				base = "state:open"
+				found = true
+			}
 			if viewName == "Pinned" {
 				base = "pinned:true"
 				found = true
@@ -206,7 +192,7 @@ func NewCommand() *cobra.Command {
 		fmt.Fprintf(c.OutOrStdout(), "%s\n%s · %s · %s\n%s\n\n%s\n\nref: %s\navailable: %t\n", oneLine(i.Title), oneLine(i.DisplayRef), i.State, oneLine(i.NativeState), oneLine(i.URL), model.Plain(i.Body), i.Ref, i.Available)
 		return nil
 	}})
-	root.AddCommand(&cobra.Command{Use: "sources", Short: "Show configured scope and cached coverage; no live probes", Args: argsExactly(0), RunE: func(c *cobra.Command, a []string) error {
+	sourcesCommand := &cobra.Command{Use: "sources", Short: "Show cached coverage; explicitly discover or register sources with subcommands", Args: argsExactly(0), RunE: func(c *cobra.Command, a []string) error {
 		svc, e := initialize(c)
 		if e != nil {
 			return e
@@ -219,7 +205,7 @@ func NewCommand() *cobra.Command {
 			return writeJSON(c.OutOrStdout(), r)
 		}
 		if len(r) == 0 {
-			fmt.Fprintln(c.OutOrStdout(), "No configured sources. See: lazytodo config example")
+			fmt.Fprintln(c.OutOrStdout(), "No configured sources. Run lazytodo init to select sources, or lazytodo config edit.")
 		}
 		for _, st := range r {
 			fmt.Fprintf(c.OutOrStdout(), "%s · %s · %s · %d items\n", st.ID, oneLine(st.Scope), st.State, st.Count)
@@ -228,7 +214,9 @@ func NewCommand() *cobra.Command {
 			}
 		}
 		return nil
-	}})
+	}}
+	root.AddCommand(sourcesCommand)
+	addSetupCommands(root, sourcesCommand, &configPath, &jsonOutput, terminal)
 	var sourceID string
 	fetch := &cobra.Command{Use: "fetch", Short: "Read configured sources and atomically refresh the local cache", Args: argsExactly(0), RunE: func(c *cobra.Command, a []string) error {
 		svc, e := initialize(c)
@@ -281,7 +269,22 @@ func NewCommand() *cobra.Command {
 		}
 		return svc.Open(c.Context(), a[0])
 	}})
-	cfg := &cobra.Command{Use: "config", Short: "Inspect configuration without changing it", Args: argsExactly(0)}
+	cfg := &cobra.Command{Use: "config", Short: "Inspect or explicitly edit local configuration", Args: argsExactly(0)}
+	cfg.AddCommand(&cobra.Command{Use: "edit", Short: "Edit configuration using VISUAL, EDITOR, or vi; validate on return", Args: argsExactly(0), RunE: func(c *cobra.Command, _ []string) error {
+		if jsonOutput || !terminal(c) {
+			return service.Fail("usage", "config edit requires input/output terminals and cannot be combined with --json")
+		}
+		path, _, e := config.SelectPath(configPath, c.Flags().Changed("config"))
+		if e != nil {
+			return service.Fail("config", e.Error())
+		}
+		e = config.Edit(c.Context(), path, config.Editor(), c.InOrStdin(), c.OutOrStdout(), c.ErrOrStderr())
+		var invalid *config.InvalidEdit
+		if errors.As(e, &invalid) {
+			return service.Fail("config", e.Error())
+		}
+		return e
+	}})
 	cfg.AddCommand(&cobra.Command{Use: "example", Short: "Print a static example; does not create files", Args: argsExactly(0), RunE: func(c *cobra.Command, a []string) error {
 		if jsonOutput {
 			return writeJSON(c.OutOrStdout(), map[string]string{"format": "toml", "content": config.Example})

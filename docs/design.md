@@ -6,6 +6,22 @@ lazytodo owns a projection, not work-item truth. Trackers own native content/sta
 
 `internal/model` defines canonical identity/projection. `internal/source` reads complete snapshots with native CLI transports or an explicit file. `internal/store` manages SQLite observations and pins; `internal/service` is shared by Cobra and Bubble Tea. `internal/skill` embeds operational instructions. There is no daemon, plugin framework or model runtime.
 
+## Explicit source setup
+
+`init` is a standalone, terminal-only three-stage wizard, not an automatic startup scan. It discovers installed native CLIs locally, shows editable host choices, and only starts account/repository metadata requests after Enter. Existing native credentials are reused; missing tools/login lead to guidance, never automatic installation or authentication.
+
+Repository/project candidates are bounded, newest-first and opt-in. A partial failure remains visible without erasing another host's usable choices. Text input owns printable keys; filtering does not discard selected items, and Review lists all selections. Review defaults to Back, not Save. Only explicit Save creates/appends configuration, via the same SourceDraft/SourcePlan used by `sources add`. Cancellation before Save creates no config/cache; cancellation during Save reconciles the actual atomic-write outcome. Existing file comments/preferences and symlinks are preserved; concurrent changes abort rather than being overwritten.
+
+`sources discover --provider ... --host ... --json` is the scriptable metadata read; `sources add --provider ... --scope ... --json` is explicit offline local registration. Bare `sources` remains cache-only. Setup does not certify the server's Work Items capabilities or task access; the subsequent explicit fetch verifies those.
+
+## Cwd context and source-focused browsing
+
+TUI startup schedules a bounded local Git read after rendering. `internal/repoctx` recognizes safe forge URLs, resolving nested checkouts/worktrees and choosing branch upstream, origin, or a unique recognized target. There are no network/SSH probes; credentials never become display fields. Unknown hosts/aliases and ambiguous targets are not guessed. `repo_context=false` opts out; non-TUI commands never run this detection.
+
+Configured enabled cwd matches focus the Open view only before user interaction. Otherwise `c` provides an explicit path. Missing sources offer Ignore this time by default or a reviewed Add + fetch. Registration returns a new immutable Service/configuration snapshot instead of mutating the one in use by ongoing effects; the targeted fetch queues behind the TUI's current refresh. A committed registration is not rolled back or called uncommitted if fetching/cancellation later fails. Disabled sources require explicit manual enabling.
+
+Views (Open/All/Pinned/custom) and source scope are separate. Scope changes preserve each view's query/selection/scroll and use the same service predicates as the CLI. `s` is a source picker plus cached diagnostics, not a discovery probe. Native scopes/numbers are primary human labels; internal aliases and canonical references remain stable machine identifiers.
+
 ## Identity and fields
 
 `ref` is `lt1_` plus base64url JSON encoding of `[provider, authority, namespace, immutable native ID]`. Consumers treat it as opaque and copy it from output. GitHub's global issue ID uses namespace `issues`; GitLab uses global WorkItem GID and namespace `work_items`. Repository/project paths and issue number/IID are display/scope metadata, not global identity. A local source needs an explicit durable store namespace, not a checkout path.
@@ -51,6 +67,8 @@ Error stderr:
 ```
 
 Exit: 0 success, 1 runtime/partial fetch failure, 2 usage/config, 130 cancellation. Partial fetch may emit per-source result JSON on stdout and error JSON on stderr. No source raw stderr or progress enters JSON. Successful cache reads do not imply freshness. Machine paths never prompt; explicit `open` is an outward browser action and rejects `--json`.
+
+`config edit` resolves the same selected path independently of parsing, then invokes `$VISUAL`, `$EDITOR`, or `vi` with safely split arguments and the absolute file path. It requires a real TTY and rejects JSON before any file creation. Missing files get a private example template; existing content/comments are left to the editor. Validation on return checks the file itself, including view syntax, without env/flag overrides masking errors. Invalid or failed-editor changes are never silently reverted; restart an existing TUI to load edits. No source discovery/fetch or cache initialization occurs.
 
 Static help/version/skill/config-example paths do not parse configuration or create directories. Documentation JSON is an explicit content envelope rather than Markdown mixed into an item list.
 

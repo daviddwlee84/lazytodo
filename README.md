@@ -19,9 +19,11 @@ To update this preview, rebuild from a reviewed source checkout. Public installa
 
 ## Configure real sources
 
-1. Install and authenticate `gh` and/or `glab` for the intended host using their own tools. lazytodo neither logs in nor stores credentials.
-2. Run `bin/lazytodo config example` for a template; save your edited copy to `~/.config/lazytodo/config.toml` or pass `--config PATH`.
-3. Add only the repositories/projects you want to read:
+1. Run **`bin/lazytodo init`** in a terminal. Select GitHub/GitLab hosts; existing gh/glab logins are reused. If a tool or login is missing, the wizard explains installation/authentication and manual alternatives; it never installs tools or logs in for you.
+2. Discover recent repositories/projects, select only those you want, and review the exact host/scope/config path before saving. No repositories are preselected and no issues are fetched during setup.
+3. For manual editing, use `bin/lazytodo config edit`. Both commands respect XDG, `--config PATH` and `LAZYTODO_CONFIG`; existing malformed TOML must be repaired with `config edit`.
+
+Example explicit sources:
 
 ```toml
 refresh_interval = "5m"
@@ -49,7 +51,34 @@ bin/lazytodo fetch
 bin/lazytodo
 ```
 
-No account/repository discovery. GitHub excludes PRs. GitLab needs the Work Items GraphQL fields used by the adapter; unsupported schemas produce an error, **never an Issues fallback presented as full Work Items**. Group epics and full namespace discovery are not included.
+### Editing and authentication
+
+```sh
+bin/lazytodo config edit
+VISUAL="code --wait" bin/lazytodo config edit
+bin/lazytodo --config ./work.toml config edit
+```
+
+Editor precedence: `$VISUAL` → `$EDITOR` → `vi`. Quoted arguments are supported without shell expansion. GUI editors need their wait flag. Existing malformed TOML can be repaired; on return the file (including view queries) is validated without environment overrides masking errors. Invalid edits are kept, not reverted. Existing comments are not reserialized. `config edit` requires real input/output terminals, rejects `--json`, and never fetches sources or creates cache/pin databases. Restart an open TUI to load changes.
+
+**Already logged in?** Nothing else to import: lazytodo calls `gh api` / `glab api` with each source's explicit hostname, inheriting the native CLI's credentials, active account and environment. A github.com login does not authenticate another enterprise/GitLab host. No token is copied into lazytodo configuration.
+
+**Access is not scope.** Normal startup never discovers or adds repositories automatically. `init` explicitly lists owned/collaborator/organization-member GitHub repositories and GitLab membership projects, excluding archived or explicitly issue-disabled entries. These are not every readable public repository, watched repositories, or a list of issues assigned to you.
+
+Candidates are ordered by GitHub repository `updated_at` / GitLab project `last_activity_at`, **not issue update time**. Discovery starts with up to 200 eligible entries per host, can be expanded to 1000, and inspects at most 2000 records per host. Partial results/errors are labeled. Selected destinations must be reviewed before local configuration is written. Existing comments/settings are preserved; duplicates—including disabled sources—are skipped, not silently enabled. External edits during setup abort the save rather than being overwritten.
+
+Scriptable equivalents:
+
+```sh
+bin/lazytodo sources discover --provider github --host github.com --json
+bin/lazytodo sources discover --provider gitlab --host gitlab.example.com --limit 400 --json
+bin/lazytodo sources add --provider github --scope owner/repo --scope owner/another --json
+bin/lazytodo sources add --provider gitlab --host gitlab.example.com --scope group/project
+```
+
+`discover` reads account/repository metadata but does not save configuration or fetch tasks. `add` registers explicitly named scopes without any API/auth probe, so it also works before gh/glab is installed. Both the wizard and `add` generate stable readable source aliases; edit aliases manually if desired. Configurations using inline `sources = []` cannot be safely appended without restructuring; use `config edit` to replace that inline declaration with source tables.
+
+GitHub excludes PRs. GitLab needs the Work Items GraphQL fields used by the adapter; unsupported schemas produce an error, **never an Issues fallback presented as full Work Items**. Group epics and full namespace discovery are not included.
 
 ## Daily use
 
@@ -62,11 +91,15 @@ No account/repository discovery. GitHub excludes PRs. GitLab needs the Work Item
 | `p` | Toggle a **local** pin |
 | `o` | Explicitly open the native source URL |
 | `r` | Refresh sources asynchronously |
-| `v`, `s` | Saved views / cached source status |
+| `v` | Open / All / Pinned / saved views |
+| `s`, then Enter | Focus one repository or All sources; inspect cached status/errors |
+| `c` | Focus/revisit the current cwd repository |
 | Ctrl+N / Ctrl+P | Next/previous result page |
 | `?`, Esc, `q` | Help, back/clear, quit |
 
-Wide terminals show list + preview; narrow terminals show the focused pane. No mouse capture, mandatory icons or Vim insert mode. A refresh follows the selected identity rather than the old row number.
+The TUI starts in **Open** (closed items remain available under All). Views and source scope are independent: choose a repo with `s`, then use `v` to see its Open/All/Pinned items. `s` → All sources returns to cross-repo browsing. Each source/view keeps its filter and selection. Rows use readable repository names and issue numbers rather than truncated internal IDs; the footer summarizes freshness/errors, with details in `s`.
+
+Wide terminals show list + preview; narrow terminals show the focused pane. No mouse capture, mandatory icons or Vim insert mode. A refresh follows the selected identity rather than the old row number. Manual `r` refreshes the focused source, or all configured sources when All sources is selected.
 
 ```sh
 bin/lazytodo query '登入 state:open label:"needs review"'
@@ -81,6 +114,16 @@ bin/lazytodo skill print next
 Text/quoted phrases and filters are ANDed. Exact label spelling is preserved, including `workflow::todo`; text uses Unicode-normalized, case-folded substring matching, including Chinese. Supported filters: `source:`, `state:open|closed|unknown`, `label:`, `pinned:true|false`. Unknown filter names are errors. There is no translation or semantic search yet.
 
 `query`, `show` and `sources` are **cache-only**. TUI refresh runs only while the process is open; `0s` disables automatic fetch, not manual `r`/`fetch`. An external scheduler can invoke `fetch`; none is installed automatically.
+
+## Current repository context
+
+In the interactive TUI, local Git metadata identifies cwd's repository (including subdirectories/worktrees). A configured, enabled match is initially focused in Open. Detection is asynchronous and does not steal focus after the person begins navigating/typing; `c` focuses or revisits it explicitly.
+
+An unconfigured recognized remote offers **Ignore this time** (default) or **Add + fetch**. Only explicit confirmation writes a local source and fetches that repository. The active TUI adopts the registration without restarting; a pending refresh finishes before the targeted fetch. Ignore is session-only; set `repo_context = false` in TOML to disable detection/suggestions entirely. The fictional demo opts out.
+
+Preference: branch upstream remote → origin → a unique recognized target. Ambiguous remotes require a choice. HTTPS/SSH/scp-like URLs are supported; credentials are discarded and SSH ports are not mistaken for API ports. Custom forge hosts must already be known in sources; unknown hosts/SSH aliases require manual setup rather than guessed providers. No Git fetch, SSH probe, account discovery or Git state change is performed. Outside a Git checkout or without a remote, global browsing remains available. CLI query/show/sources remain cache-only and do not detect cwd.
+
+Enabled placeholder scopes such as `owner/repository` or `group/project` are still ordinary configured sources: disable or replace them in `config edit`. Setup preserves existing entries rather than deleting them. New example blocks explicitly remain disabled even when uncommented.
 
 ## Data, privacy and agent use
 
@@ -112,6 +155,9 @@ go test -race ./...
 go vet ./...
 go build -o bin/lazytodo ./cmd/lazytodo
 python3 scripts/pty_smoke.py bin/lazytodo
+python3 scripts/config_edit_smoke.py bin/lazytodo
+python3 scripts/setup_smoke.py bin/lazytodo
+python3 scripts/repo_context_smoke.py bin/lazytodo
 python3 scripts/check_todo.py
 ```
 

@@ -51,7 +51,7 @@ func TestStaticPathsWithBrokenConfig(t *testing.T) {
 }
 func TestMachineErrorsAndNoTUI(t *testing.T) {
 	isolated(t)
-	for _, args := range [][]string{{"query", "--json", "--typo"}, {"query", "--json", "--limit", "0"}, {"tui", "--json"}, {"--json"}, {"pin", "--json"}, {"skill", "print", "bad", "--json"}} {
+	for _, args := range [][]string{{"query", "--json", "--typo"}, {"query", "--json", "--limit", "0"}, {"tui", "--json"}, {"--json"}, {"pin", "--json"}, {"skill", "print", "bad", "--json"}, {"config", "edit", "--json"}} {
 		code, out, err := invoke(args...)
 		if code != 2 || out != "" || !json.Valid([]byte(err)) {
 			t.Fatalf("%v: %d stdout=%q stderr=%q", args, code, out, err)

@@ -49,6 +49,7 @@ print("HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n" + json.d
     fake.chmod(0o700)
     config = root / "config.toml"
     config.write_text('''refresh_interval = "0s"
+repo_context = false
 color = "never"
 [[sources]]
 id = "demo"
@@ -143,9 +144,9 @@ query = "state:open"
         send(b"\x1b")
         send(b"v")
         wait_text("Views")
-        send(b"j\r")  # Pinned view
+        send(b"\x1b[Hj\r")  # All -> Pinned view, independently of initial Open.
         send(b"v")
-        send(b"k\r")  # All
+        send(b"\x1b[H\r")  # All
         send(b"s")
         wait_text("Sources")
         send(b"\x1b")
@@ -171,7 +172,7 @@ query = "state:open"
         marker.write_text("fail")
         start = len(transcript)
         send(b"r")
-        wait_text("Refresh failed", after=start)
+        wait_text("Refresh incomplete", after=start)
         assert cli("query")["total"] == 4, "failed refresh erased rows"
         assert b"private-token-must-not-appear" not in transcript
         for width, height in ((80,24),(36,12),(1,1),(120,30)):

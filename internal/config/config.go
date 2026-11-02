@@ -12,6 +12,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"lazytodo/internal/model"
+	"lazytodo/internal/search"
 )
 
 type Source struct {
@@ -41,6 +42,7 @@ type View struct {
 	Query string `toml:"query" json:"query"`
 }
 type Config struct {
+	RepoContext     bool     `toml:"repo_context" json:"repo_context"`
 	RefreshInterval string   `toml:"refresh_interval" json:"refresh_interval"`
 	Color           string   `toml:"color" json:"color"`
 	Sources         []Source `toml:"sources" json:"sources"`
@@ -80,21 +82,58 @@ func ResolvePaths() (Paths, error) {
 	return Paths{filepath.Join(base("XDG_CONFIG_HOME", ".config"), "config.toml"), filepath.Join(base("XDG_CACHE_HOME", ".cache"), "cache.sqlite"), filepath.Join(base("XDG_DATA_HOME", ".local/share"), "local.sqlite"), base("XDG_STATE_HOME", ".local/state")}, nil
 }
 
+// SelectPath resolves the same file for reads and edits, without parsing it.
+func SelectPath(flag string, changed bool) (path string, explicit bool, err error) {
+	selected, explicit := flag, changed
+	if !changed {
+		selected, explicit = os.LookupEnv("LAZYTODO_CONFIG")
+	}
+	if explicit {
+		if selected == "" {
+			return "", true, errors.New("explicit config path cannot be empty")
+		}
+		path, err = filepath.Abs(selected)
+		return path, true, err
+	}
+	paths, err := ResolvePaths()
+	return paths.Config, false, err
+}
+
+// LoadFile validates the file itself, without environment or flag overrides.
+func LoadFile(path string) (Config, error) {
+	c, err := readFile(path, true)
+	if err != nil {
+		return c, err
+	}
+	return c, c.Validate(filepath.Dir(path))
+}
+
 // Load never creates files. explicit=false permits a missing default config.
 func Load(path string, explicit bool) (Config, error) {
 	return LoadWithOverrides(path, explicit, nil, nil)
 }
-func LoadWithOverrides(path string, explicit bool, color, interval *string) (Config, error) {
-	c := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{}, Views: []View{}}
+func readFile(path string, explicit bool) (Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil && !(os.IsNotExist(err) && !explicit) {
-		return c, fmt.Errorf("read configuration: %w", err)
+		return Config{}, fmt.Errorf("read configuration: %w", err)
 	}
-	if err == nil {
+	return parseFile(b)
+}
+func parseFile(b []byte) (Config, error) {
+	c := Config{RepoContext: true, RefreshInterval: "5m", Color: "auto", Sources: []Source{}, Views: []View{}}
+	if len(b) > 0 {
 		dec := toml.NewDecoder(strings.NewReader(string(b))).DisallowUnknownFields()
 		if err := dec.Decode(&c); err != nil {
 			return c, fmt.Errorf("invalid TOML configuration: %w", err)
 		}
+	}
+	return c, nil
+}
+
+func LoadWithOverrides(path string, explicit bool, color, interval *string) (Config, error) {
+	c, err := readFile(path, explicit)
+	if err != nil {
+		return c, err
 	}
 	if v, ok := os.LookupEnv("LAZYTODO_REFRESH_INTERVAL"); ok {
 		c.RefreshInterval = v
@@ -183,26 +222,33 @@ func (c *Config) Validate(base string) error {
 		if strings.TrimSpace(v.Name) == "" || views[v.Name] {
 			return errors.New("view names must be nonempty and unique (All and Pinned are reserved)")
 		}
+		if _, err := search.Parse(v.Query); err != nil {
+			return fmt.Errorf("view %s: %w", v.Name, err)
+		}
 		views[v.Name] = true
 	}
 	return nil
 }
 
-const Example = `# Credentials remain with gh/glab. No source is discovered automatically.
+const Example = `# Credentials remain with gh/glab. No source is registered automatically.
 refresh_interval = "5m"
 color = "auto"
+repo_context = true # Read local Git context in the TUI; false disables suggestions.
+# Prefer lazytodo init to select real sources. Examples below remain disabled.
 
 # [[sources]]
 # id = "work-github"
 # kind = "github"
 # host = "github.com"
 # scope = "owner/repository"
+# disabled = true # Replace the scope, then explicitly enable it.
 
 # [[sources]]
 # id = "work-gitlab"
 # kind = "gitlab"
 # host = "gitlab.com"
 # scope = "group/project"
+# disabled = true # Replace the host/scope, then explicitly enable it.
 
 # [[sources]]
 # id = "snapshot"

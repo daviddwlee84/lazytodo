@@ -6,7 +6,8 @@ lazytodo is a read-side inbox browser/router, not a task authority or agent orch
 - CLI and TUI share `internal/service`; adapters live in `internal/source`. Do not duplicate search or fetch rules in views/commands.
 - Complete snapshots are committed atomically per source. Never erase a last-good snapshot after partial pagination, GraphQL errors, timeout, or cancellation.
 - Canonical identity uses source authority and immutable native IDs, not title, issue number alone, checkout path, or source alias.
-- Query/show/sources must remain cache-only. Static help/version/skill must work without config or directory creation.
+- Query/show/bare sources must remain cache-only. Static help/version/skill must work without config or directory creation. Explicit sources discover and init may read provider metadata.
+- Cwd context reads local Git only, is TUI-only and opt-out. Never execute SSH probes or guess unknown forge hosts. Adding a source requires a visible target/config review; ignore is session-only. Do not steal navigation after late detection or mutate a Service configuration while other effects use it.
 - Source subprocesses are fixed read operations with explicit host/scope, bounded output and noninteractive execution; no shell evaluation or arbitrary command plugins.
 - Test using fictional fixtures, fake CLI runners, and temporary HOME/XDG directories. Never exercise real tracker migrations, exports, sync, private stores or external writes for a smoke test.
 - Do not read personal-ops private records or activate its roles. That project owns goals, decisions and commitment policy.
@@ -21,6 +22,9 @@ go test -race ./...
 go vet ./...
 go build -o bin/lazytodo ./cmd/lazytodo
 python3 scripts/pty_smoke.py bin/lazytodo
+python3 scripts/config_edit_smoke.py bin/lazytodo
+python3 scripts/setup_smoke.py bin/lazytodo
+python3 scripts/repo_context_smoke.py bin/lazytodo
 python3 scripts/check_todo.py
 ```
 

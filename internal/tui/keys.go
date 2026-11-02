@@ -16,7 +16,8 @@ const (
 	helpKeys
 	viewKeys
 	sourceKeys
-	allKeys = navigation | searchInput | helpKeys | viewKeys | sourceKeys
+	repoKeys
+	allKeys = navigation | searchInput | helpKeys | viewKeys | sourceKeys | repoKeys
 )
 
 type binding struct {
@@ -47,7 +48,13 @@ var bindings = []binding{
 	{"right", []string{"right", "l"}, "→/l", "focus preview", navigation, false, nil},
 	{"search", []string{"/"}, "/", "search", navigation, true, nil},
 	{"views", []string{"v"}, "v", "views", navigation, true, nil},
-	{"sources", []string{"s"}, "s", "sources", navigation, false, nil},
+	{"sources", []string{"s"}, "s", "sources", navigation, true, nil},
+	{"choose-source", []string{"enter"}, "Enter", "focus source", sourceKeys, true, nil},
+	{"current-repo", []string{"c"}, "c", "current repo", navigation, true, func(m *app) bool { return m.repoReady && len(m.repoResult.Targets) > 0 }},
+	{"repo-ignore", []string{"esc", "q"}, "Esc", "ignore this time", repoKeys, true, func(m *app) bool { return !m.repoPending }},
+	{"repo-next", []string{"tab", "right", "l", "down", "j"}, "Tab/→", "choose", repoKeys, true, func(m *app) bool { return !m.repoPending }},
+	{"repo-prev", []string{"shift+tab", "left", "h", "up", "k"}, "←", "previous", repoKeys, false, func(m *app) bool { return !m.repoPending }},
+	{"repo-choose", []string{"enter"}, "Enter", "confirm", repoKeys, true, func(m *app) bool { return !m.repoPending }},
 	{"inspect", []string{"enter"}, "Enter", "inspect", navigation, false, func(m *app) bool { _, ok := m.selected(); return ok }},
 	{"pin", []string{"p"}, "p", "pin", navigation, true, func(m *app) bool { i, ok := m.selected(); return ok && m.pins[i.Ref] == 0 }},
 	{"open", []string{"o"}, "o", "open URL", navigation, true, func(m *app) bool { i, ok := m.selected(); return ok && i.URL != "" && m.opens[i.Ref] == 0 }},
@@ -69,6 +76,8 @@ func (m *app) scope() keyScope {
 		return viewKeys
 	case sourcesOverlay:
 		return sourceKeys
+	case repoOverlay:
+		return repoKeys
 	}
 	return navigation
 }
@@ -76,6 +85,7 @@ func (b binding) applies(m *app, scope keyScope) bool {
 	return b.scope&scope != 0 && (b.available == nil || b.available(m))
 }
 func (m *app) key(msg tea.KeyPressMsg) tea.Cmd {
+	m.userTouched = true
 	key := msg.String()
 	if m.gPending {
 		m.gPending = false
@@ -144,7 +154,19 @@ func (m *app) action(id string) tea.Cmd {
 	case "help":
 		m.overlay, m.overlayScroll, m.gPending = helpOverlay, 0, false
 	case "sources":
-		m.overlay, m.overlayScroll, m.gPending = sourcesOverlay, 0, false
+		m.openSourcePicker()
+	case "choose-source":
+		return m.chooseSource()
+	case "current-repo":
+		return m.openRepoContext()
+	case "repo-ignore":
+		return m.repoAction("ignore")
+	case "repo-next":
+		return m.repoAction("next")
+	case "repo-prev":
+		return m.repoAction("previous")
+	case "repo-choose":
+		return m.repoAction("choose")
 	case "views":
 		m.overlay, m.overlayCursor, m.overlayScroll, m.gPending = viewsOverlay, m.active, 0, false
 	case "close":
@@ -159,7 +181,7 @@ func (m *app) action(id string) tea.Cmd {
 		return m.open()
 	case "refresh":
 		m.notice = ""
-		return tea.Batch(m.query(false), m.fetch(false))
+		return tea.Batch(m.query(false), m.fetchSource(m.scopeSource, false))
 	case "next-page":
 		return m.page(1)
 	case "previous-page":
@@ -185,6 +207,8 @@ func (m *app) move(id string) {
 	}
 	if m.overlay == viewsOverlay {
 		m.overlayCursor = move(m.overlayCursor, len(m.views)-1)
+	} else if m.overlay == sourcesOverlay {
+		m.sourceCursor = move(m.sourceCursor, len(m.config.Active()))
 	} else if m.overlay != noOverlay {
 		m.overlayScroll = move(m.overlayScroll, max(0, len(m.overlayLines(max(1, m.width-4)))-m.contentHeight()))
 	} else if m.focus == previewPane {
@@ -231,7 +255,7 @@ func (m *app) footer() string {
 		var essential []string
 		for _, b := range bindings {
 			core := b.id == "search" || b.id == "help" || b.id == "quit"
-			action := m.width >= 60 && (b.id == "down" || b.id == "pin" || b.id == "open")
+			action := m.width >= 60 && (b.id == "sources" || b.id == "views" || b.id == "pin")
 			if b.applies(m, navigation) && (core || action) {
 				essential = append(essential, b.hint+" "+b.label)
 			}

@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"lazytodo/internal/config"
 	"lazytodo/internal/model"
+	"lazytodo/internal/repoctx"
 	"lazytodo/internal/service"
 )
 
@@ -34,8 +35,11 @@ func Run(ctx context.Context, svc *service.Service) error {
 		return errors.New("TUI requires a service")
 	}
 	m := newModel(ctx, svc, svc.Config)
+	m.configureRepoContext(svc)
 	defer m.cancel()
 	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
+	m.cancel()
+	m.finishRepoRegistration()
 	return err
 }
 
@@ -53,6 +57,7 @@ const (
 	helpOverlay
 	viewsOverlay
 	sourcesOverlay
+	repoOverlay
 )
 
 type viewState struct {
@@ -69,35 +74,50 @@ type viewState struct {
 func (v *viewState) query() string { return strings.TrimSpace(v.base + " " + v.filter) }
 
 type app struct {
-	ctx                          context.Context
-	cancel                       context.CancelFunc
-	backend                      backend
-	config                       config.Config
-	views                        []viewState
-	active                       int
-	focus                        pane
-	overlay                      overlay
-	overlayCursor, overlayScroll int
-	input                        textinput.Model
-	searching                    bool
-	width, height                int
-	dark, color                  bool
-	started                      bool
-	gPending                     bool
-	gGeneration                  uint64
-	queryGeneration              uint64
-	queryCancel                  context.CancelFunc
-	sourceGeneration             uint64
-	fetchGeneration              uint64
-	fetching                     bool
-	detailGeneration             uint64
-	detailPending                bool
-	operationGeneration          uint64
-	pins                         map[string]uint64
-	opens                        map[string]uint64
-	sources                      []model.SourceStatus
-	sourceError, notice          string
-	tickInterval                 time.Duration
+	ctx                                    context.Context
+	cancel                                 context.CancelFunc
+	backend                                backend
+	config                                 config.Config
+	views                                  []viewState
+	active                                 int
+	focus                                  pane
+	overlay                                overlay
+	overlayCursor, overlayScroll           int
+	input                                  textinput.Model
+	searching                              bool
+	width, height                          int
+	dark, color                            bool
+	started                                bool
+	gPending                               bool
+	gGeneration                            uint64
+	queryGeneration                        uint64
+	queryCancel                            context.CancelFunc
+	sourceGeneration                       uint64
+	fetchGeneration                        uint64
+	fetching                               bool
+	detailGeneration                       uint64
+	detailPending                          bool
+	operationGeneration                    uint64
+	pins                                   map[string]uint64
+	opens                                  map[string]uint64
+	sources                                []model.SourceStatus
+	sourceError, notice, lastFetchError    string
+	tickInterval                           time.Duration
+	scopeSource                            string
+	scopedViews                            map[string][]viewState
+	sourceCursor                           int
+	userTouched                            bool
+	repoLookup                             func(context.Context) (repoctx.Result, error)
+	repoRegister                           func(context.Context, backend, repoctx.Target) (repoRegistration, error)
+	repoResult                             repoctx.Result
+	repoReady, repoIgnored, repoPending    bool
+	repoCursor, repoButton                 int
+	repoConfirm                            bool
+	repoSourceID, repoNote, repoConfigPath string
+	repoReceipt                            *repoRegistrationReceipt
+	repoRegistrationHandled                bool
+	pendingFetchID                         string
+	fetchSourceID                          string
 }
 
 func newModel(ctx context.Context, b backend, c config.Config) *app {
@@ -118,6 +138,18 @@ func newModel(ctx context.Context, b backend, c config.Config) *app {
 	for _, v := range c.Views {
 		m.views = append(m.views, viewState{name: v.Name, base: v.Query})
 	}
+	open := -1
+	for n, v := range m.views {
+		if v.name == "Open" {
+			open = n
+		}
+	}
+	if open < 0 {
+		open = len(m.views)
+		m.views = append(m.views, viewState{name: "Open", base: "state:open"})
+	}
+	m.active = open
+	m.scopedViews = map[string][]viewState{}
 	for _, s := range c.Sources {
 		state := "unknown"
 		if s.Disabled {
@@ -207,7 +239,11 @@ func (m *app) query(reset bool) tea.Cmd {
 		v.items, v.total = nil, 0
 	}
 	v.loading, v.err = true, ""
-	req := service.QueryRequest{Text: v.query(), Limit: pageSize, Offset: v.offset, IncludeBody: true}
+	text := v.query()
+	if m.scopeSource != "" {
+		text = strings.TrimSpace("source:" + m.scopeSource + " " + text)
+	}
+	req := service.QueryRequest{Text: text, Limit: pageSize, Offset: v.offset, IncludeBody: true}
 	if v.offset > 0 {
 		req.Revision = v.revision
 	}
@@ -224,14 +260,19 @@ func (m *app) readSources() tea.Cmd {
 	generation, ctx, b := m.sourceGeneration, m.ctx, m.backend
 	return func() tea.Msg { sources, err := b.Sources(ctx); return sourcesMsg{generation, sources, err} }
 }
-func (m *app) fetch(dueOnly bool) tea.Cmd {
+func (m *app) fetch(dueOnly bool) tea.Cmd { return m.fetchSource("", dueOnly) }
+func (m *app) fetchSource(sourceID string, dueOnly bool) tea.Cmd {
 	if m.fetching || len(m.config.Active()) == 0 || (dueOnly && m.tickInterval == 0) {
 		return nil
 	}
 	m.fetching = true
+	m.fetchSourceID = sourceID
 	m.fetchGeneration++
 	generation, ctx, b := m.fetchGeneration, m.ctx, m.backend
-	return func() tea.Msg { result, err := b.Fetch(ctx, "", dueOnly); return fetchMsg{generation, result, err} }
+	return func() tea.Msg {
+		result, err := b.Fetch(ctx, sourceID, dueOnly)
+		return fetchMsg{generation, result, err}
+	}
 }
 func (m *app) pin() tea.Cmd {
 	item, ok := m.selected()
@@ -277,7 +318,11 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.started = true
-		return m, tea.Batch(m.query(false), m.readSources(), m.fetch(true), m.nextTick())
+		return m, tea.Batch(m.query(false), m.readSources(), m.fetch(true), m.nextTick(), m.detectRepo())
+	case repoDetectedMsg:
+		return m, m.acceptRepoDetection(msg)
+	case repoAddedMsg:
+		return m, m.acceptRepoRegistration(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
 		m.input.SetWidth(max(1, m.width-4))
@@ -339,12 +384,21 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.fetching = false
+		m.fetchSourceID = ""
+		m.lastFetchError = ""
 		if msg.err != nil {
-			m.notice = "Refresh failed: " + model.Plain(msg.err.Error())
+			m.lastFetchError = model.Plain(msg.err.Error())
+			m.notice = "Refresh incomplete — see s for source errors."
 		} else {
-			m.notice = "Refresh complete; cached source status is shown below."
+			m.notice = "Refresh complete."
 		}
-		return m, tea.Batch(m.query(false), m.readSources())
+		query, statuses := m.query(false), m.readSources()
+		if m.pendingFetchID != "" {
+			id := m.pendingFetchID
+			m.pendingFetchID = ""
+			return m, tea.Batch(query, statuses, m.fetchSource(id, false))
+		}
+		return m, tea.Batch(query, statuses)
 	case pinMsg:
 		if m.pins[msg.ref] != msg.generation {
 			return m, nil
@@ -453,18 +507,24 @@ func (m *app) sourceSummary() string {
 	if len(m.sources) == 0 {
 		return "No sources configured"
 	}
-	parts := make([]string, 0, len(m.sources))
+	counts := map[string]int{}
 	for _, s := range m.sources {
 		state := s.State
 		if state == "" {
 			state = "unknown"
 		}
-		if s.Error != "" && state != "error" {
-			state += "/error"
+		if s.Error != "" {
+			state = "failed"
 		}
-		parts = append(parts, oneLine(s.ID)+" "+oneLine(state))
+		counts[state]++
 	}
-	return strings.Join(parts, " · ")
+	parts := []string{fmt.Sprintf("%d sources", len(m.sources))}
+	for _, state := range []string{"failed", "unknown", "stale", "fresh", "disabled"} {
+		if counts[state] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", counts[state], state))
+		}
+	}
+	return strings.Join(parts, " · ") + "  |  s sources"
 }
 func (m *app) countLabel() string {
 	v := m.current()

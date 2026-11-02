@@ -35,6 +35,22 @@ The PTY initially expected different count text (`1 item` versus the UI's page c
 
 No screenshot/emulator result is treated as proof of Unicode glyph rendering. Deterministic view tests measure terminal-cell widths and preserve text; this PTY verifies actual key parsing and cleanup.
 
+## Configuration editor follow-up
+
+`config edit` was verified with `python3 scripts/config_edit_smoke.py bin/lazytodo` using a real PTY and a disposable editor executable whose path contains spaces. The editor received real terminal input/output and quoted `--wait` arguments. Repairing invalid TOML, retaining invalid saved changes with exit 2, flag/env/XDG path precedence, first-file creation, and JSON rejection even under a PTY all passed. No source fetch or cache/pin initialization occurred. Unit tests also cover editor failure, missing executables, cancelled entry, quote parsing, comment preservation and file validation independent of environment overrides. Actual user editors/authentication were not launched.
+
+## Source wizard follow-up
+
+`python3 scripts/setup_smoke.py bin/lazytodo` passed in a real PTY with fictional gh/glab executables. Covered: no metadata calls until explicit discovery; recent-first selection; failed GitLab authentication alongside successful GitHub candidates; printable filter keys; safe default Back in Review; explicit Save through the real atomic config writer; no task fetch/cache/pin initialization; missing-tool install/manual guidance; all-unauthenticated native-login guidance; tiny/normal resize; cancellation without file creation; JSON rejection even under a PTY; terminal restoration and private-error suppression.
+
+Unit/fixture tests cover paginated metadata reads, memberships/affiliations, filtering, discovery bounds/partial results/timeouts, deferred and stale UI effects, hidden selections, configured/disabled targets, safe review controls, save outcome reconciliation, configuration preservation/idempotency/symlinks and concurrent-editor conflicts. No real account discovery or authentication was performed. CI commands were added; remote CI/Linux PTY execution remains unverified here.
+
+## Cwd context / scoped UI follow-up
+
+`python3 scripts/repo_context_smoke.py bin/lazytodo` passed using disposable Git checkouts, nested cwd, fake gh and isolated XDG. Verified configured-repo focus with default Open, All preserving source scope, returning to All sources, explicit `c`, no API calls from detection, safe default Ignore without config/cache changes, confirmed Add + targeted fetch without restarting, disabled-source preservation and terminal restoration. The existing general TUI harness and fictional demo explicitly disable repo context so their real checkout cannot trigger registration/network behavior.
+
+Read-only Git tests cover nested/worktree roots, URL credential stripping, SSH versus API ports, known custom hosts, unsupported aliases, precedence/dedup/ambiguity, output limits, missing Git and cancellation. Model/service tests cover late detection not stealing input, scope/view state, safe/visible confirmation, single registration, queued targeted fetch and immutable service configuration. New template tests prove uncommented example scopes remain disabled. No actual user config was modified or real provider queried by these tests.
+
 ## Search measurement
 
 `go test ./internal/service -run '^$' -bench BenchmarkQuery10k -benchtime=3x -benchmem`

@@ -1,5 +1,6 @@
 # Fictional, local-only data. Observation times are deliberately fixed/stale.
 refresh_interval = "0s"
+repo_context = false # Never suggest real repositories in the fictional demo.
 color = "auto"
 
 [[sources]]

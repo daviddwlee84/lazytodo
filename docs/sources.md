@@ -1,6 +1,16 @@
 # Sources and compatibility
 
-Only configured sources are contacted. Run `sources --json` for cached status, not a live probe. Run `fetch` explicitly or allow TUI's configured interval. Authentication stays with native tools; install/login separately for the exact hostname. No tokens belong in lazytodo TOML.
+Normal fetch contacts configured sources only. Run bare `sources --json` for cached status, not a live probe. Explicit `init` or `sources discover` additionally reads account/repository metadata from the user-selected host, without fetching task content. Run `fetch` explicitly or allow TUI's configured interval after registration. Authentication stays with native tools; install/login separately for the exact hostname. No tokens belong in lazytodo TOML.
+
+## Source initialization
+
+`lazytodo init` is an explicit terminal-only wizard: choose hosts → discover candidates → select → review → save. Host defaults come from existing configured sources, recognized host environment variables, or public defaults; the selected hosts remain visible/editable before any network call. Missing tools and failed logins get install/authentication/manual instructions, never an embedded credential form. One failing host does not discard another host's candidates.
+
+GitHub discovery uses `GET /user` and `/user/repos` with owned/collaborator/organization-member affiliations, newest `updated_at` first. GitLab uses `GET /user` and `/projects?membership=true&archived=false&order_by=last_activity_at&sort=desc`. Dates describe repository/project metadata/activity, not the newest issue. The selected native login and credentials remain with gh/glab. No `auth status --show-token`, token extraction, or native login is invoked.
+
+Discovery has a 45-second overall timeout, 64 MiB response budget, maximum 2000 inspected records and 1–1000 eligible candidates per host (wizard/CLI default 200). Limits/errors return labeled partial results; unknown/unavailable is not an empty complete inventory. Archived and explicitly issue-disabled entries are excluded. Other known readable scopes can be registered manually with `sources add`; visibility alone is not blanket registration authorization.
+
+Saving appends source tables to the selected config with a cooperative writer lock, a content/target check and atomic rename. Existing comments, views, settings and file symlinks are preserved. Duplicate targets are skipped, including disabled ones; enabling them remains a separate edit. Direct editors do not honor the cooperative lock, so the file is checked again immediately before replacement. Incompatible inline-array TOML shapes are rejected with a manual-edit instruction instead of being reserialized. Cancel before Save creates no configuration or cache. Setup never fetches issues; use the printed fetch command afterward.
 
 ## GitHub
 

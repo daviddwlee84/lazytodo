@@ -76,6 +76,8 @@ func testModel(t *testing.T, n int) (*app, *fakeBackend) {
 	t.Helper()
 	f := &fakeBackend{items: items(n), revision: "one"}
 	m := newModel(context.Background(), f, config.Config{Color: "never", RefreshInterval: "5m", Sources: []config.Source{{ID: "work", Kind: "snapshot"}}, Views: []config.View{{Name: "Open", Query: "state:open"}}})
+	// General transition tests start in All; default Open has dedicated coverage.
+	m.active = 0
 	t.Cleanup(m.cancel)
 	return m, f
 }
@@ -370,7 +372,8 @@ func TestSourcesOverlayNeverProbesAndStaleErrorsIgnored(t *testing.T) {
 	if m.sourceError != "" {
 		t.Fatal("late source error leaked")
 	}
-	m.sources = []model.SourceStatus{{ID: "failed", State: "stale", Error: "provider unavailable\x1b[31m"}}
+	m.sources = []model.SourceStatus{{ID: "work", State: "stale", Error: "provider unavailable\x1b[31m"}}
+	m.sourceCursor = 1
 	content := m.View().Content
 	if !strings.Contains(content, "stale") || !strings.Contains(content, "provider unavailable") || strings.Contains(content, "\x1b") {
 		t.Fatal("source error was not visible and sanitized")
@@ -382,7 +385,7 @@ func TestNoConfigAndIntervalZero(t *testing.T) {
 	m := newModel(context.Background(), f, config.Config{Color: "never", RefreshInterval: "0s"})
 	defer m.cancel()
 	load(t, m)
-	if !strings.Contains(m.View().Content, "No sources configured") || !strings.Contains(m.View().Content, "config example") {
+	if !strings.Contains(m.View().Content, "No sources configured") || !strings.Contains(m.View().Content, "lazytodo init") {
 		t.Fatal("missing setup guidance")
 	}
 	if m.fetch(true) != nil || m.nextTick() != nil {

@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -95,7 +93,10 @@ func (m *app) clamp() {
 
 func (m *app) View() tea.View {
 	v := m.current()
-	header := "lazytodo  /  " + oneLine(v.name) + "  ·  read-only inbox"
+	header := "lazytodo  /  " + oneLine(v.name) + "  /  " + oneLine(m.scopeName())
+	if m.scopeSource != "" && m.scopeSource == m.repoSourceID {
+		header += "  (cwd)"
+	}
 	if m.fetching {
 		header += "  ·  refreshing…"
 	} else if v.loading {
@@ -117,17 +118,20 @@ func (m *app) View() tea.View {
 			name = "Views"
 		}
 		if m.overlay == sourcesOverlay {
-			name = "Sources · cached status (no live probes)"
+			name = "Sources · Enter focuses · cached status"
+		}
+		if m.overlay == repoOverlay {
+			name = "Current repository · explicit registration"
 		}
 		lines := m.overlayLines(max(1, m.width-2))
 		start := min(m.overlayScroll, max(0, len(lines)-m.contentHeight()))
 		body = m.renderPane(name, lines[start:], m.width, true)
 	} else if m.width >= 90 {
-		left := m.renderPane("List", m.listLines(m.listWidth()-2), m.listWidth(), m.focus == listPane)
+		left := m.renderPane("Items", m.listLines(m.listWidth()-2), m.listWidth(), m.focus == listPane)
 		right := m.renderPane("Preview", m.visiblePreview(), m.width-m.listWidth(), m.focus == previewPane)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	} else if m.focus == listPane {
-		body = m.renderPane("List", m.listLines(max(1, m.width-2)), m.width, true)
+		body = m.renderPane("Items", m.listLines(max(1, m.width-2)), m.width, true)
 	} else {
 		body = m.renderPane("Preview", m.visiblePreview(), m.width, true)
 	}
@@ -190,7 +194,7 @@ func (m *app) renderPane(title string, lines []string, width int, focused bool) 
 		ld := lipgloss.LightDark(m.dark)
 		border := ld(lipgloss.Color("#b5b5b5"), lipgloss.Color("#555555"))
 		if focused {
-			border = ld(lipgloss.Color("#4d4d4d"), lipgloss.Color("#bdbdbd"))
+			border = ld(lipgloss.Color("#376bb0"), lipgloss.Color("#739bda"))
 		}
 		style = style.BorderForeground(border)
 	}
@@ -203,7 +207,7 @@ func (m *app) listLines(width int) []string {
 			return wrapped("Loading cached items… Navigation remains available.", width)
 		}
 		if len(m.config.Sources) == 0 {
-			return wrapped("No sources configured.\n\nUse lazytodo config example for a template and lazytodo config show to find config.toml. Add a source there.\n\nCredentials stay with gh/glab; nothing is discovered automatically.", width)
+			return wrapped("No sources configured.\n\nRun: lazytodo init\nChoose recent repositories/projects using existing gh/glab logins.\n\nManual setup: lazytodo config edit\nMissing tools/login get setup instructions. Normal startup discovers nothing.", width)
 		}
 		if len(m.config.Active()) == 0 {
 			return wrapped("All sources are disabled. Enable a source in config.toml, or browse locally pinned items with the views picker.", width)
@@ -244,16 +248,22 @@ func (m *app) listLines(width int) []string {
 		if label == "" {
 			label = "Unavailable pinned item"
 		}
-		metadata := pad(oneLine(item.SourceID), min(8, max(1, width/5))) + " "
+		metadata := ""
 		if width >= 40 {
-			metadata += pad(oneLine(item.State), 7) + " "
+			metadata = m.stateLabel(item.State) + " "
+		}
+		if m.scopeSource == "" {
+			metadata += pad(m.repoLabel(item), min(32, max(12, width/4))) + " "
+		}
+		if width >= 55 {
+			metadata += pad(nativeNumber(item), 7) + " "
 		}
 		line := fit(prefix+pin+" "+metadata+label, width)
 		if index == v.selected {
 			line = pad(line, width)
 			if m.color {
 				ld := lipgloss.LightDark(m.dark)
-				line = lipgloss.NewStyle().Foreground(ld(lipgloss.Color("#202020"), lipgloss.Color("#eeeeee"))).Background(ld(lipgloss.Color("#e8e8e8"), lipgloss.Color("#333333"))).Render(line)
+				line = lipgloss.NewStyle().Foreground(ld(lipgloss.Color("#202020"), lipgloss.Color("#eeeeee"))).Background(ld(lipgloss.Color("#e4edf9"), lipgloss.Color("#293c57"))).Render(line)
 			}
 		}
 		lines = append(lines, line)
@@ -280,13 +290,13 @@ func (m *app) previewLines(width int) []string {
 	if item.NativeType != "" {
 		meta += "  ·  " + oneLine(item.NativeType)
 	}
-	if item.NativeState != "" {
+	if item.NativeState != "" && item.NativeState != item.State && !(item.State == "open" && item.NativeState == "opened") {
 		meta += " (" + oneLine(item.NativeState) + ")"
 	}
 	if item.Pinned {
 		meta += "  ·  pinned locally"
 	}
-	sections = append(sections, meta, "Source: "+oneLine(item.SourceID)+"  "+oneLine(item.Scope))
+	sections = append(sections, meta, "Source: "+oneLine(item.Origin.Provider)+" · "+oneLine(item.Origin.Authority))
 	if !item.Available {
 		sections = append(sections, "Unavailable: this local pin is absent from the current source snapshot.")
 	}
@@ -319,11 +329,15 @@ func (m *app) previewLines(width int) []string {
 		}
 		sections = append(sections, "Delegates: "+strings.Join(names, ", "))
 	}
+	var times []string
 	if item.UpdatedAt != nil {
-		sections = append(sections, "Updated: "+item.UpdatedAt.Format(time.RFC3339))
+		times = append(times, "Updated: "+relativeTime(*item.UpdatedAt))
 	}
 	if !item.ObservedAt.IsZero() {
-		sections = append(sections, "Cached: "+item.ObservedAt.Format(time.RFC3339))
+		times = append(times, "Cached: "+relativeTime(item.ObservedAt)+" · "+m.sourceStatus(item.SourceID).State)
+	}
+	if len(times) > 0 {
+		sections = append(sections, strings.Join(times, "  |  "))
 	}
 	if item.URL != "" {
 		sections = append(sections, "URL: "+oneLine(item.URL))
@@ -334,7 +348,11 @@ func (m *app) previewLines(width int) []string {
 		body = "No body in cached content."
 	}
 	sections = append(sections, body)
-	return wrapped(strings.Join(sections, "\n"), width)
+	lines := wrapped(strings.Join(sections, "\n"), width)
+	if len(lines) > 0 {
+		lines[0] = m.strong(lines[0])
+	}
+	return lines
 }
 func (m *app) overlayLines(width int) []string {
 	switch m.overlay {
@@ -356,41 +374,12 @@ func (m *app) overlayLines(width int) []string {
 		}
 		return lines
 	case sourcesOverlay:
-		if len(m.sources) == 0 {
-			return wrapped("No configured sources. Use lazytodo config example for a template and lazytodo config show for its path. This screen never probes providers.", width)
+		if len(m.config.Active()) == 0 {
+			return wrapped("No active sources. Run lazytodo init for guided selection or lazytodo config edit for manual setup. This screen never probes providers.", width)
 		}
-		var lines []string
-		if m.sourceError != "" {
-			lines = append(lines, wrapped("Status error: "+m.sourceError, width)...)
-			lines = append(lines, "")
-		}
-		for _, s := range m.sources {
-			state := s.State
-			if state == "" {
-				state = "unknown"
-			}
-			label := fmt.Sprintf("%s · %s · %s · %d items", oneLine(s.ID), oneLine(s.Kind), oneLine(state), s.Count)
-			lines = append(lines, wrapped(label, width)...)
-			if s.Scope != "" {
-				lines = append(lines, wrapped("  "+s.Scope, width)...)
-			}
-			if s.ObservedAt == nil {
-				lines = append(lines, "  Cache age: unknown")
-			} else {
-				lines = append(lines, wrapped("  Observed: "+s.ObservedAt.Format(time.RFC3339), width)...)
-			}
-			if s.LastAttempt != nil {
-				lines = append(lines, wrapped("  Last attempt: "+s.LastAttempt.Format(time.RFC3339), width)...)
-			}
-			if s.RetryAfter != nil {
-				lines = append(lines, wrapped("  Retry after: "+s.RetryAfter.Format(time.RFC3339), width)...)
-			}
-			if s.Error != "" {
-				lines = append(lines, wrapped("  Error: "+s.Error, width)...)
-			}
-			lines = append(lines, "")
-		}
-		return lines
+		return m.sourcePickerLines(width)
+	case repoOverlay:
+		return m.repoLines(width)
 	case helpOverlay:
 		lines := []string{"NAVIGATION"}
 		for _, hint := range m.hints(navigation, false) {
