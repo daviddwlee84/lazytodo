@@ -1,0 +1,25 @@
+# Copy/edit only the sources you intend to query. Native gh/glab own credentials.
+refresh_interval = "5m"
+color = "auto"
+
+[[sources]]
+id = "github-work"
+kind = "github"
+host = "github.com"
+scope = "owner/repository"
+disabled = true # Enable after setting the correct scope.
+
+[[sources]]
+id = "gitlab-work"
+kind = "gitlab"
+host = "gitlab.example.com"
+scope = "group/project"
+disabled = true
+
+[[views]]
+name = "Open"
+query = "state:open"
+
+[[views]]
+name = "Review"
+query = 'label:"needs review"'

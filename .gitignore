@@ -1,0 +1,9 @@
+/bin/
+/dist/
+*.test
+/coverage.out
+.DS_Store
+/.claude/plans/
+/.specstory/history/
+/.specstory/statistics.json
+/.specstory/references/

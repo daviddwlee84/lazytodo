@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "scope": "fictional/demo",
+  "observed_at": "2026-01-01T12:00:00Z",
+  "complete": true,
+  "items": [
+    {
+      "origin": {"provider": "demo", "authority": "example.invalid", "namespace": "fictional", "id": "42"},
+      "display_ref": "demo#42",
+      "title": "修復登入逾時 · Login timeout",
+      "body": "This is fictional data, not a real commitment.\n\nReproduce the timeout and inspect the source before deciding what to change.\n\nLabels retain their native spelling. A pin is only a local bookmark.",
+      "url": "https://example.invalid/issues/42",
+      "native_type": "Issue", "native_state": "opened", "state": "open",
+      "labels": [{"name": "bug"}, {"name": "needs review"}],
+      "assignees": [], "delegates": null,
+      "updated_at": "2026-01-01T11:00:00Z"
+    },
+    {
+      "origin": {"provider": "demo", "authority": "example.invalid", "namespace": "fictional", "id": "43"},
+      "display_ref": "demo#43", "title": "Review Café é / 👩🏽‍💻 rendering",
+      "body": "Resize the terminal and search for 中文 or Café.\nThe view should preserve graphemes and show source freshness.",
+      "native_type": "Task", "native_state": "in_progress", "state": "open",
+      "labels": [{"name": "workflow::doing"}], "assignees": [], "delegates": null,
+      "updated_at": "2026-01-01T10:00:00Z"
+    },
+    {
+      "origin": {"provider": "demo", "authority": "example.invalid", "namespace": "fictional", "id": "44"},
+      "display_ref": "demo#44", "title": "Document source boundaries",
+      "body": "Closed at the native source is not proof of verified acceptance criteria.",
+      "native_type": "Issue", "native_state": "closed", "state": "closed",
+      "labels": [], "assignees": null, "delegates": null,
+      "updated_at": "2026-01-01T09:00:00Z"
+    }
+  ]
+}

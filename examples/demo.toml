@@ -1,0 +1,16 @@
+# Fictional, local-only data. Observation times are deliberately fixed/stale.
+refresh_interval = "0s"
+color = "auto"
+
+[[sources]]
+id = "demo"
+kind = "snapshot"
+path = "snapshot.json"
+
+[[views]]
+name = "Open"
+query = "state:open"
+
+[[views]]
+name = "Review"
+query = 'label:"needs review"'
