@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-type keyScope uint8
+type keyScope uint16
 
 const (
 	navigation keyScope = 1 << iota
@@ -17,7 +17,8 @@ const (
 	viewKeys
 	sourceKeys
 	repoKeys
-	allKeys = navigation | searchInput | helpKeys | viewKeys | sourceKeys | repoKeys
+	tagKeys
+	allKeys = navigation | searchInput | helpKeys | viewKeys | sourceKeys | repoKeys | tagKeys
 )
 
 type binding struct {
@@ -34,13 +35,13 @@ var bindings = []binding{
 	{"cancel", []string{"ctrl+c"}, "Ctrl+C", "cancel and quit", allKeys, false, nil},
 	{"accept-search", []string{"enter"}, "Enter", "accept search", searchInput, true, nil},
 	{"clear-search", []string{"esc"}, "Esc", "clear search", searchInput, true, nil},
-	{"up", []string{"up", "k"}, "↑/k", "up", navigation | helpKeys | viewKeys | sourceKeys, false, nil},
-	{"down", []string{"down", "j"}, "↓/j", "down", navigation | helpKeys | viewKeys | sourceKeys, true, nil},
-	{"top", []string{"home", "gg"}, "Home/gg", "first / scroll top", navigation | helpKeys | viewKeys | sourceKeys, false, nil},
-	{"bottom", []string{"end", "G"}, "End/G", "last / scroll bottom", navigation | helpKeys | viewKeys | sourceKeys, false, nil},
-	{"prefix", []string{"g"}, "g", "begin gg (Esc cancels)", navigation | helpKeys | viewKeys | sourceKeys, false, nil},
+	{"up", []string{"up", "k"}, "↑/k", "up", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
+	{"down", []string{"down", "j"}, "↓/j", "down", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, true, nil},
+	{"top", []string{"home", "gg"}, "Home/gg", "first / scroll top", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
+	{"bottom", []string{"end", "G"}, "End/G", "last / scroll bottom", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
+	{"prefix", []string{"g"}, "g", "begin gg (Esc cancels)", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
 	{"back", []string{"esc"}, "Esc", "back / clear search", navigation, false, nil},
-	{"close", []string{"esc", "q", "?"}, "Esc/q/?", "close overlay", helpKeys | sourceKeys, true, nil},
+	{"close", []string{"esc", "q", "?"}, "Esc/q/?", "close overlay", helpKeys | sourceKeys | tagKeys, true, nil},
 	{"close", []string{"esc", "q", "v"}, "Esc/q/v", "close picker", viewKeys, true, nil},
 	{"choose-view", []string{"enter"}, "Enter", "use view", viewKeys, true, nil},
 	{"focus", []string{"tab", "shift+tab"}, "Tab/Shift+Tab", "switch pane", navigation, true, nil},
@@ -50,6 +51,11 @@ var bindings = []binding{
 	{"views", []string{"v"}, "v", "views", navigation, true, nil},
 	{"sources", []string{"s"}, "s", "sources", navigation, true, nil},
 	{"choose-source", []string{"enter"}, "Enter", "focus source", sourceKeys, true, nil},
+	{"edit-sources", []string{"e"}, "e", "edit sources", sourceKeys, true, func(m *app) bool {
+		return m.editorFactory != nil && !m.editorRequested && !m.editingConfig && !m.repoPending
+	}},
+	{"tags", []string{"t"}, "t", "tags", navigation, true, func(m *app) bool { _, ok := m.selected(); return ok }},
+	{"choose-tag", []string{"enter"}, "Enter", "filter label", tagKeys, true, func(m *app) bool { return len(m.tagLabels) > 0 }},
 	{"current-repo", []string{"c"}, "c", "current repo", navigation, true, func(m *app) bool { return m.repoReady && len(m.repoResult.Targets) > 0 }},
 	{"repo-ignore", []string{"esc", "q"}, "Esc", "ignore this time", repoKeys, true, func(m *app) bool { return !m.repoPending }},
 	{"repo-next", []string{"tab", "right", "l", "down", "j"}, "Tab/→", "choose", repoKeys, true, func(m *app) bool { return !m.repoPending }},
@@ -58,7 +64,9 @@ var bindings = []binding{
 	{"inspect", []string{"enter"}, "Enter", "inspect", navigation, false, func(m *app) bool { _, ok := m.selected(); return ok }},
 	{"pin", []string{"p"}, "p", "pin", navigation, true, func(m *app) bool { i, ok := m.selected(); return ok && m.pins[i.Ref] == 0 }},
 	{"open", []string{"o"}, "o", "open URL", navigation, true, func(m *app) bool { i, ok := m.selected(); return ok && i.URL != "" && m.opens[i.Ref] == 0 }},
-	{"refresh", []string{"r"}, "r", "refresh", navigation, true, func(m *app) bool { return !m.fetching && !m.current().loading }},
+	{"refresh", []string{"r"}, "r", "refresh", navigation, true, func(m *app) bool {
+		return !m.fetching && !m.current().loading && !m.editingConfig && !m.editorRequested && m.configError == ""
+	}},
 	{"next-page", []string{"ctrl+n"}, "Ctrl+N", "next page", navigation, true, func(m *app) bool { v := m.current(); return !v.loading && v.offset+pageSize < v.total }},
 	{"previous-page", []string{"ctrl+p"}, "Ctrl+P", "previous page", navigation, true, func(m *app) bool { v := m.current(); return !v.loading && v.offset > 0 }},
 	{"help", []string{"?"}, "?", "help", navigation, true, nil},
@@ -78,6 +86,8 @@ func (m *app) scope() keyScope {
 		return sourceKeys
 	case repoOverlay:
 		return repoKeys
+	case tagsOverlay:
+		return tagKeys
 	}
 	return navigation
 }
@@ -157,6 +167,12 @@ func (m *app) action(id string) tea.Cmd {
 		m.openSourcePicker()
 	case "choose-source":
 		return m.chooseSource()
+	case "edit-sources":
+		return m.beginConfigEdit()
+	case "tags":
+		m.openTags()
+	case "choose-tag":
+		return m.chooseTag()
 	case "current-repo":
 		return m.openRepoContext()
 	case "repo-ignore":
@@ -170,6 +186,10 @@ func (m *app) action(id string) tea.Cmd {
 	case "views":
 		m.overlay, m.overlayCursor, m.overlayScroll, m.gPending = viewsOverlay, m.active, 0, false
 	case "close":
+		if m.editorRequested {
+			m.editorRequested = false
+			m.notice = "Editor request cancelled."
+		}
 		m.overlay, m.gPending = noOverlay, false
 	case "choose-view":
 		return m.switchView(m.overlayCursor)
@@ -208,7 +228,9 @@ func (m *app) move(id string) {
 	if m.overlay == viewsOverlay {
 		m.overlayCursor = move(m.overlayCursor, len(m.views)-1)
 	} else if m.overlay == sourcesOverlay {
-		m.sourceCursor = move(m.sourceCursor, len(m.config.Active()))
+		m.sourceCursor = move(m.sourceCursor, len(m.config.Sources))
+	} else if m.overlay == tagsOverlay {
+		m.tagCursor = move(m.tagCursor, len(m.tagLabels)-1)
 	} else if m.overlay != noOverlay {
 		m.overlayScroll = move(m.overlayScroll, max(0, len(m.overlayLines(max(1, m.width-4)))-m.contentHeight()))
 	} else if m.focus == previewPane {
@@ -255,7 +277,7 @@ func (m *app) footer() string {
 		var essential []string
 		for _, b := range bindings {
 			core := b.id == "search" || b.id == "help" || b.id == "quit"
-			action := m.width >= 60 && (b.id == "sources" || b.id == "views" || b.id == "pin")
+			action := m.width >= 60 && (b.id == "sources" || b.id == "views" || b.id == "pin" || b.id == "tags")
 			if b.applies(m, navigation) && (core || action) {
 				essential = append(essential, b.hint+" "+b.label)
 			}

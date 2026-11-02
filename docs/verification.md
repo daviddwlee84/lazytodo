@@ -51,6 +51,12 @@ Unit/fixture tests cover paginated metadata reads, memberships/affiliations, fil
 
 Read-only Git tests cover nested/worktree roots, URL credential stripping, SSH versus API ports, known custom hosts, unsupported aliases, precedence/dedup/ambiguity, output limits, missing Git and cancellation. Model/service tests cover late detection not stealing input, scope/view state, safe/visible confirmation, single registration, queued targeted fetch and immutable service configuration. New template tests prove uncommented example scopes remain disabled. No actual user config was modified or real provider queried by these tests.
 
+## TUI source editor / labels follow-up
+
+`python3 scripts/tui_sources_tags_smoke.py bin/lazytodo` passed with a fictional snapshot and a disposable editor executable. It verifies label badges and exact tag filtering; real terminal release to an editor with canonical/echo mode; visible editor result acknowledgement; reacquisition and valid config reload; per-source priority override changes without re-fetching; raw invalid-file detection even when launch flags could otherwise mask it; refresh pause; repair; disable/remove/re-add of the last source from the same TUI; retained explicit launch flags; and terminal restoration. The initial badge check exposed a narrow-column case; compact priority badges were added and the PTY test rerun successfully.
+
+Unit tests additionally cover source-service immutability, per-scope/view restoration, retarget/disable invalidation, cancelling an edit request while refresh stops, stale replies, exact label query round trips (including quotes/backslashes/CJK), unknown versus empty labels, stable picker targets, per-source nil/empty/custom priority rules, safe RGB colors and bounded cell widths. No real editor/config/source labels were modified during verification.
+
 ## Search measurement
 
 `go test ./internal/service -run '^$' -bench BenchmarkQuery10k -benchtime=3x -benchmem`

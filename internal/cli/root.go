@@ -73,7 +73,9 @@ func NewCommand() *cobra.Command {
 		if e != nil {
 			return nil, service.Fail("config", e.Error())
 		}
-		return service.New(cfg, paths, source.New()), nil
+		svc := service.New(cfg, paths, source.New())
+		svc.ColorOverride, svc.IntervalOverride = cp, ip
+		return svc, nil
 	}
 	terminal := func(c *cobra.Command) bool {
 		in, iok := c.InOrStdin().(*os.File)
@@ -282,6 +284,9 @@ func NewCommand() *cobra.Command {
 		var invalid *config.InvalidEdit
 		if errors.As(e, &invalid) {
 			return service.Fail("config", e.Error())
+		}
+		if e == nil {
+			_, e = fmt.Fprintln(c.OutOrStdout(), "Restart an existing TUI to load changes (editing from its Sources menu reloads automatically).")
 		}
 		return e
 	}})

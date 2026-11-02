@@ -16,13 +16,14 @@ import (
 )
 
 type Source struct {
-	ID              string `toml:"id" json:"id"`
-	Kind            string `toml:"kind" json:"kind"`
-	Host            string `toml:"host" json:"host,omitempty"`
-	Scope           string `toml:"scope" json:"scope,omitempty"`
-	Path            string `toml:"path" json:"path,omitempty"`
-	Disabled        bool   `toml:"disabled" json:"disabled"`
-	RefreshInterval string `toml:"refresh_interval" json:"refresh_interval,omitempty"`
+	ID              string    `toml:"id" json:"id"`
+	Kind            string    `toml:"kind" json:"kind"`
+	Host            string    `toml:"host" json:"host,omitempty"`
+	Scope           string    `toml:"scope" json:"scope,omitempty"`
+	Path            string    `toml:"path" json:"path,omitempty"`
+	Disabled        bool      `toml:"disabled" json:"disabled"`
+	RefreshInterval string    `toml:"refresh_interval" json:"refresh_interval,omitempty"`
+	PriorityLabels  *[]string `toml:"priority_labels,omitempty" json:"priority_labels,omitempty"`
 }
 
 func (s Source) Fingerprint() string {
@@ -135,6 +136,22 @@ func LoadWithOverrides(path string, explicit bool, color, interval *string) (Con
 	if err != nil {
 		return c, err
 	}
+	return effective(c, path, color, interval)
+}
+
+// LoadForReload validates the edited file before applying runtime overrides, in
+// one read, so flags cannot mask invalid saved content after an editor returns.
+func LoadForReload(path string, color, interval *string) (Config, error) {
+	c, err := readFile(path, true)
+	if err != nil {
+		return c, err
+	}
+	if err = c.Validate(filepath.Dir(path)); err != nil {
+		return c, err
+	}
+	return effective(c, path, color, interval)
+}
+func effective(c Config, path string, color, interval *string) (Config, error) {
 	if v, ok := os.LookupEnv("LAZYTODO_REFRESH_INTERVAL"); ok {
 		c.RefreshInterval = v
 	}
@@ -173,6 +190,15 @@ func (c *Config) Validate(base string) error {
 		ids[s.ID] = true
 		if s.RefreshInterval != "" && !validInterval(s.RefreshInterval) {
 			return fmt.Errorf("source %s: invalid refresh_interval", s.ID)
+		}
+		if s.PriorityLabels != nil {
+			seen := map[string]bool{}
+			for _, name := range *s.PriorityLabels {
+				if strings.TrimSpace(name) == "" || model.Plain(name) != name || strings.ContainsAny(name, "\n\r\t") || seen[name] {
+					return fmt.Errorf("source %s: priority_labels must contain unique, nonempty printable label names", s.ID)
+				}
+				seen[name] = true
+			}
 		}
 		switch s.Kind {
 		case "github", "gitlab":
@@ -242,6 +268,7 @@ repo_context = true # Read local Git context in the TUI; false disables suggesti
 # host = "github.com"
 # scope = "owner/repository"
 # disabled = true # Replace the scope, then explicitly enable it.
+# priority_labels = ["P0", "P1", "urgent"] # Optional exact names; [] disables hints.
 
 # [[sources]]
 # id = "work-gitlab"

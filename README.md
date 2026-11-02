@@ -59,7 +59,9 @@ VISUAL="code --wait" bin/lazytodo config edit
 bin/lazytodo --config ./work.toml config edit
 ```
 
-Editor precedence: `$VISUAL` → `$EDITOR` → `vi`. Quoted arguments are supported without shell expansion. GUI editors need their wait flag. Existing malformed TOML can be repaired; on return the file (including view queries) is validated without environment overrides masking errors. Invalid edits are kept, not reverted. Existing comments are not reserialized. `config edit` requires real input/output terminals, rejects `--json`, and never fetches sources or creates cache/pin databases. Restart an open TUI to load changes.
+Editor precedence: `$VISUAL` → `$EDITOR` → `vi`. Quoted arguments are supported without shell expansion. GUI editors need their wait flag. Existing malformed TOML can be repaired; on return the file (including view queries) is validated without environment overrides masking errors. Invalid edits are kept, not reverted. Existing comments are not reserialized. `config edit` requires real input/output terminals, rejects `--json`, and never fetches sources or creates cache/pin databases.
+
+**Inside the TUI:** press `s`, then `e` to edit the same selected TOML file (including source host/scope, enable/disable, addition/removal and view preferences). The current refresh is cancelled/quiesced first; Bubble Tea releases terminal ownership to the editor. Press Enter after reading the editor result to return. Valid settings reload immediately, keeping usable scope/view/selection state; removed or disabled scopes return to All sources. Invalid saved settings remain on disk, keep the previous cached view, and pause refresh until repaired through `s` → `e`. The last source can be removed and re-added from the same UI. Launch flags still outrank saved preferences. Editing with the standalone command requires restarting an already-open TUI; there is no filesystem watcher.
 
 **Already logged in?** Nothing else to import: lazytodo calls `gh api` / `glab api` with each source's explicit hostname, inheriting the native CLI's credentials, active account and environment. A github.com login does not authenticate another enterprise/GitLab host. No token is copied into lazytodo configuration.
 
@@ -93,6 +95,8 @@ GitHub excludes PRs. GitLab needs the Work Items GraphQL fields used by the adap
 | `r` | Refresh sources asynchronously |
 | `v` | Open / All / Pinned / saved views |
 | `s`, then Enter | Focus one repository or All sources; inspect cached status/errors |
+| `s`, then `e` | Edit source configuration and reload on return |
+| `t`, then Enter | Browse selected item's tags and add an exact label filter |
 | `c` | Focus/revisit the current cwd repository |
 | Ctrl+N / Ctrl+P | Next/previous result page |
 | `?`, Esc, `q` | Help, back/clear, quit |
@@ -114,6 +118,22 @@ bin/lazytodo skill print next
 Text/quoted phrases and filters are ANDed. Exact label spelling is preserved, including `workflow::todo`; text uses Unicode-normalized, case-folded substring matching, including Chinese. Supported filters: `source:`, `state:open|closed|unknown`, `label:`, `pinned:true|false`. Unknown filter names are errors. There is no translation or semantic search yet.
 
 `query`, `show` and `sources` are **cache-only**. TUI refresh runs only while the process is open; `0s` disables automatic fetch, not manual `r`/`fetch`. An external scheduler can invoke `fetch`; none is installed automatically.
+
+## Tags and priority labels
+
+Native GitHub/GitLab label names, IDs and colors are preserved. The list shows compact label badges when space permits (priority hints take precedence); the preview retains all labels. `t` opens the selected item's full tag list; Enter appends an exact `label:"…"` filter, including scoped labels, Chinese, spaces and quoted names. Nothing is written to the source. Safe six-digit native RGB colors get contrasting chip text; `NO_COLOR` remains supported.
+
+Priority is a **label convention hint**, not a universal urgency rank. By default, exact `P0`–`P4` (case-insensitive) and nonempty `priority::…`, `priority:…`, `priority/…`, `priority-…` names are highlighted. There is no severity conversion, automatic task sorting or assignment. Names such as `urgent` or `high` alone are not guessed.
+
+An optional field **inside an existing `[[sources]]` block** overrides those conventions using exact names:
+
+```toml
+priority_labels = ["P0", "P1", "priority::high", "urgent", "待處理"]
+# priority_labels = []  # Disable priority hints for this source.
+# Omit the field to use conservative automatic conventions.
+```
+
+This affects display only, not the source fingerprint/cache or original labels. It does not infer priority from issue body text or read GitHub Projects custom Priority fields. Use `label:P1`, `label:"priority::high"`, or a saved view for deliberate filtering.
 
 ## Current repository context
 
@@ -158,6 +178,7 @@ python3 scripts/pty_smoke.py bin/lazytodo
 python3 scripts/config_edit_smoke.py bin/lazytodo
 python3 scripts/setup_smoke.py bin/lazytodo
 python3 scripts/repo_context_smoke.py bin/lazytodo
+python3 scripts/tui_sources_tags_smoke.py bin/lazytodo
 python3 scripts/check_todo.py
 ```
 

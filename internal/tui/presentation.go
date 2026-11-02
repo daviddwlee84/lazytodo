@@ -96,8 +96,8 @@ func sourceScope(s config.Source, status model.SourceStatus) string {
 	return s.ID
 }
 func (m *app) sourcePickerLines(width int) []string {
-	active := m.config.Active()
-	lines := []string{"Enter focuses a source; views (Open/All/Pinned) stay independent.", ""}
+	active := m.config.Sources
+	lines := []string{"Enter focuses · e edits sources (including disabled) · Esc returns", ""}
 	capacity := max(1, m.contentHeight()-10)
 	start := min(max(0, m.sourceCursor-capacity+1), max(0, len(active)+1-capacity))
 	for index := start; index < len(active)+1 && index < start+capacity; index++ {
@@ -111,6 +111,9 @@ func (m *app) sourcePickerLines(width int) []string {
 		}
 		s := active[index-1]
 		st := m.sourceStatus(s.ID)
+		if s.Disabled {
+			st.State = "disabled"
+		}
 		line := fmt.Sprintf("%s%s  ·  %s  ·  %d cached", prefix, sourceScope(s, st), st.State, st.Count)
 		if s.ID == m.repoSourceID {
 			line += "  (cwd)"
@@ -121,6 +124,9 @@ func (m *app) sourcePickerLines(width int) []string {
 	if m.sourceCursor > 0 && m.sourceCursor <= len(active) {
 		s := active[m.sourceCursor-1]
 		st := m.sourceStatus(s.ID)
+		if s.Disabled {
+			st.State = "disabled"
+		}
 		lines = append(lines, wrapped(s.Kind+" · "+s.Host+"/"+sourceScope(s, st), width)...)
 		if st.ObservedAt != nil {
 			lines = append(lines, "Observed: "+st.ObservedAt.Format(time.RFC3339))
@@ -141,6 +147,9 @@ func (m *app) sourcePickerLines(width int) []string {
 		if m.lastFetchError != "" {
 			lines = append(lines, wrapped("Last refresh: "+m.lastFetchError, width)...)
 		}
+	}
+	if m.configError != "" {
+		lines = append(lines, wrapped("Config not applied: "+m.configError+". Press e to repair; refresh is paused.", width)...)
 	}
 	if m.sourceError != "" {
 		lines = append(lines, wrapped("Status: "+m.sourceError, width)...)

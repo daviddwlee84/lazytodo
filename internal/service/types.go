@@ -12,10 +12,12 @@ type Fetcher interface {
 	Fetch(context.Context, config.Source) (model.Snapshot, error)
 }
 type Service struct {
-	Config  config.Config
-	Paths   config.Paths
-	Fetcher Fetcher
-	Now     func() time.Time
+	Config           config.Config
+	Paths            config.Paths
+	Fetcher          Fetcher
+	Now              func() time.Time
+	ColorOverride    *string
+	IntervalOverride *string
 }
 
 func New(c config.Config, p config.Paths, f Fetcher) *Service {

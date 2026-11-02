@@ -159,6 +159,6 @@ func Edit(ctx context.Context, path, editor string, in io.Reader, out, errOut io
 	if _, err = LoadFile(path); err != nil {
 		return &InvalidEdit{path, err}
 	}
-	_, err = fmt.Fprintf(out, "Configuration validated: %q\nRestart an open TUI to load changes; no sources were fetched.\n", path)
+	_, err = fmt.Fprintf(out, "Configuration validated: %q\nNo sources were fetched.\n", path)
 	return err
 }

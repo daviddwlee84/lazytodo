@@ -30,6 +30,12 @@ Source aliases can change without changing canonical identity. Two registered so
 
 Native type/state, labels, actors and timestamps remain visible alongside `open|closed|unknown`. Null labels/assignees/delegates mean unavailable/not fetched/unsupported; empty arrays mean confirmed empty. Human assignees and agent delegates are separate. No priority/commitment inference is performed.
 
+## Labels and priority presentation
+
+Labels remain native facts. UI chips may reuse a validated six-digit RGB color with contrasting text; control strings never become styles. A tag picker holds the selected item's label snapshot so refresh cannot silently retarget it; choosing a tag adds a safely quoted exact predicate through the shared search grammar.
+
+`PriorityLabel` recognizes conservative explicit naming patterns, or a source's optional exact `priority_labels` override. Nil means automatic conventions, an empty array disables hints. This is presentation metadata only: it is excluded from source target fingerprints, introduces no universal numeric rank, does not alter query ordering, and does not parse natural-language body priority or Projects fields. Original label names/order and JSON items remain unchanged.
+
 ## Observation protocol
 
 - A complete source response means all requested outer and required nested pages were read, within the configured scope and credentials. It is not a global inventory or a transactionally consistent remote instant.
@@ -68,7 +74,7 @@ Error stderr:
 
 Exit: 0 success, 1 runtime/partial fetch failure, 2 usage/config, 130 cancellation. Partial fetch may emit per-source result JSON on stdout and error JSON on stderr. No source raw stderr or progress enters JSON. Successful cache reads do not imply freshness. Machine paths never prompt; explicit `open` is an outward browser action and rejects `--json`.
 
-`config edit` resolves the same selected path independently of parsing, then invokes `$VISUAL`, `$EDITOR`, or `vi` with safely split arguments and the absolute file path. It requires a real TTY and rejects JSON before any file creation. Missing files get a private example template; existing content/comments are left to the editor. Validation on return checks the file itself, including view syntax, without env/flag overrides masking errors. Invalid or failed-editor changes are never silently reverted; restart an existing TUI to load edits. No source discovery/fetch or cache initialization occurs.
+`config edit` resolves the same selected path independently of parsing, then invokes `$VISUAL`, `$EDITOR`, or `vi` with safely split arguments and the absolute file path. It requires a real TTY and rejects JSON before any file creation. Missing files get a private example template; existing content/comments are left to the editor. Validation on return checks the file itself, including view syntax, without env/flag overrides masking errors. Invalid or failed-editor changes are never silently reverted. From the Sources menu, `e` invokes the same operation through Bubble Tea Exec: quiesce the current fetch, release the terminal, edit/validate, acknowledge the result, reacquire, then load one validated file snapshot with explicit launch overrides. Valid reloads preserve compatible view/scope state and invalidate old generations; removed/retargeted sources cannot retain visible old rows. Invalid reloads preserve the prior runtime/cache while pausing source fetches. Disabled sources remain listed/editable, and removing the last source cannot remove the editing entry point. Standalone edits need an existing TUI restarted; no watcher is installed. The edit/reload operation itself performs no discovery/fetch.
 
 Static help/version/skill/config-example paths do not parse configuration or create directories. Documentation JSON is an explicit content envelope rather than Markdown mixed into an item list.
 

@@ -36,6 +36,7 @@ func Run(ctx context.Context, svc *service.Service) error {
 	}
 	m := newModel(ctx, svc, svc.Config)
 	m.configureRepoContext(svc)
+	m.configureSourceEditor(svc)
 	defer m.cancel()
 	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
 	m.cancel()
@@ -58,6 +59,7 @@ const (
 	viewsOverlay
 	sourcesOverlay
 	repoOverlay
+	tagsOverlay
 )
 
 type viewState struct {
@@ -118,6 +120,16 @@ type app struct {
 	repoRegistrationHandled                bool
 	pendingFetchID                         string
 	fetchSourceID                          string
+	fetchCancel                            context.CancelFunc
+	repoGeneration                         uint64
+	editorFactory                          func() tea.ExecCommand
+	reloadConfig                           func(backend) (backend, config.Config, error)
+	editorRequested, editingConfig         bool
+	editorGeneration                       uint64
+	configError                            string
+	tagLabels                              []model.Label
+	tagCursor                              int
+	tagTitle, tagSourceID                  string
 }
 
 func newModel(ctx context.Context, b backend, c config.Config) *app {
@@ -262,14 +274,17 @@ func (m *app) readSources() tea.Cmd {
 }
 func (m *app) fetch(dueOnly bool) tea.Cmd { return m.fetchSource("", dueOnly) }
 func (m *app) fetchSource(sourceID string, dueOnly bool) tea.Cmd {
-	if m.fetching || len(m.config.Active()) == 0 || (dueOnly && m.tickInterval == 0) {
+	if m.editingConfig || m.editorRequested || m.configError != "" || m.fetching || len(m.config.Active()) == 0 || (dueOnly && m.tickInterval == 0) {
 		return nil
 	}
 	m.fetching = true
 	m.fetchSourceID = sourceID
 	m.fetchGeneration++
-	generation, ctx, b := m.fetchGeneration, m.ctx, m.backend
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.fetchCancel = cancel
+	generation, b := m.fetchGeneration, m.backend
 	return func() tea.Msg {
+		defer cancel()
 		result, err := b.Fetch(ctx, sourceID, dueOnly)
 		return fetchMsg{generation, result, err}
 	}
@@ -320,7 +335,14 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.started = true
 		return m, tea.Batch(m.query(false), m.readSources(), m.fetch(true), m.nextTick(), m.detectRepo())
 	case repoDetectedMsg:
+		if msg.generation != m.repoGeneration {
+			return m, nil
+		}
 		return m, m.acceptRepoDetection(msg)
+	case configEditorDoneMsg:
+		return m, m.afterEditor(msg)
+	case configReloadedMsg:
+		return m, m.applyReload(msg)
 	case repoAddedMsg:
 		return m, m.acceptRepoRegistration(msg)
 	case tea.WindowSizeMsg:
@@ -384,7 +406,11 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.fetching = false
+		m.fetchCancel = nil
 		m.fetchSourceID = ""
+		if m.editorRequested {
+			return m, m.launchConfigEditor()
+		}
 		m.lastFetchError = ""
 		if msg.err != nil {
 			m.lastFetchError = model.Plain(msg.err.Error())
@@ -504,11 +530,21 @@ func (m *app) page(delta int) tea.Cmd {
 	return m.query(false)
 }
 func (m *app) sourceSummary() string {
-	if len(m.sources) == 0 {
+	statuses := append([]model.SourceStatus(nil), m.sources...)
+	seen := map[string]bool{}
+	for _, s := range statuses {
+		seen[s.ID] = true
+	}
+	for _, s := range m.config.Sources {
+		if s.Disabled && !seen[s.ID] {
+			statuses = append(statuses, model.SourceStatus{ID: s.ID, State: "disabled"})
+		}
+	}
+	if len(statuses) == 0 {
 		return "No sources configured"
 	}
 	counts := map[string]int{}
-	for _, s := range m.sources {
+	for _, s := range statuses {
 		state := s.State
 		if state == "" {
 			state = "unknown"
@@ -518,7 +554,7 @@ func (m *app) sourceSummary() string {
 		}
 		counts[state]++
 	}
-	parts := []string{fmt.Sprintf("%d sources", len(m.sources))}
+	parts := []string{fmt.Sprintf("%d sources", len(statuses))}
 	for _, state := range []string{"failed", "unknown", "stale", "fresh", "disabled"} {
 		if counts[state] > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[state], state))

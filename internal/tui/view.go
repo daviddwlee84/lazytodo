@@ -123,6 +123,9 @@ func (m *app) View() tea.View {
 		if m.overlay == repoOverlay {
 			name = "Current repository · explicit registration"
 		}
+		if m.overlay == tagsOverlay {
+			name = "Tags · exact label filters"
+		}
 		lines := m.overlayLines(max(1, m.width-2))
 		start := min(m.overlayScroll, max(0, len(lines)-m.contentHeight()))
 		body = m.renderPane(name, lines[start:], m.width, true)
@@ -140,7 +143,9 @@ func (m *app) View() tea.View {
 		summary = "Source status error: " + oneLine(m.sourceError)
 	}
 	status := m.countLabel()
-	if m.gPending {
+	if m.configError != "" {
+		status = "Configuration invalid/not applied · refresh paused · s then e to repair"
+	} else if m.gPending {
 		status = "g … (g: first, Esc: cancel)"
 	} else if v.err != "" {
 		status = "Query failed: " + oneLine(v.err)
@@ -148,7 +153,7 @@ func (m *app) View() tea.View {
 		status += "  ·  " + oneLine(m.notice)
 	}
 	// Show pagination when no operation outcome needs the status line.
-	if v.total > pageSize && m.notice == "" && v.err == "" && !m.gPending {
+	if v.total > pageSize && m.notice == "" && v.err == "" && !m.gPending && m.configError == "" {
 		var pageHints []string
 		for _, b := range bindings {
 			if (b.id == "next-page" || b.id == "previous-page") && b.applies(m, navigation) {
@@ -258,7 +263,8 @@ func (m *app) listLines(width int) []string {
 		if width >= 55 {
 			metadata += pad(nativeNumber(item), 7) + " "
 		}
-		line := fit(prefix+pin+" "+metadata+label, width)
+		lead := prefix + pin + " " + metadata
+		line := fit(lead+m.titleWithTags(item, label, max(1, width-ansi.StringWidth(lead))), width)
 		if index == v.selected {
 			line = pad(line, width)
 			if m.color {
@@ -299,6 +305,13 @@ func (m *app) previewLines(width int) []string {
 	sections = append(sections, meta, "Source: "+oneLine(item.Origin.Provider)+" · "+oneLine(item.Origin.Authority))
 	if !item.Available {
 		sections = append(sections, "Unavailable: this local pin is absent from the current source snapshot.")
+	}
+	if hints := m.priorityHints(item); len(hints) > 0 {
+		names := make([]string, 0, len(hints))
+		for _, l := range hints {
+			names = append(names, oneLine(l.Name))
+		}
+		sections = append(sections, "Priority labels: "+strings.Join(names, ", "))
 	}
 	if item.Labels == nil {
 		sections = append(sections, "Labels: unknown / unsupported")
@@ -374,12 +387,18 @@ func (m *app) overlayLines(width int) []string {
 		}
 		return lines
 	case sourcesOverlay:
-		if len(m.config.Active()) == 0 {
-			return wrapped("No active sources. Run lazytodo init for guided selection or lazytodo config edit for manual setup. This screen never probes providers.", width)
+		if len(m.config.Sources) == 0 {
+			lines := wrapped("No sources configured. Press e to edit without leaving the TUI, or use lazytodo init for guided selection. This screen never probes providers.", width)
+			if m.configError != "" {
+				lines = append(lines, wrapped("Config not applied: "+m.configError, width)...)
+			}
+			return lines
 		}
 		return m.sourcePickerLines(width)
 	case repoOverlay:
 		return m.repoLines(width)
+	case tagsOverlay:
+		return m.tagLines(width)
 	case helpOverlay:
 		lines := []string{"NAVIGATION"}
 		for _, hint := range m.hints(navigation, false) {
@@ -390,6 +409,7 @@ func (m *app) overlayLines(width int) []string {
 			lines = append(lines, wrapped(hint, width)...)
 		}
 		lines = append(lines, wrapped("Cursor edits do not reset selection. Changed text does. Searches include cached body text. Filters: source:, state:, label:, pinned:.", width)...)
+		lines = append(lines, "", "SOURCES / TAGS", "s then e edits local sources and reloads valid settings on return.", "t shows the selected item's labels; Enter adds an exact label filter.", "Priority labels are display hints, not shared urgency or sorting ranks.")
 		lines = append(lines, "", "CONTEXT")
 		lines = append(lines, wrapped("* local pin; ~ pin pending. The > pane heading indicates focus; the > row indicates selection. Narrow screens show only the focused pane. Source unknown/stale/error states remain visible; Sources shows cached details without probes. Pinning never changes the source. Refresh follows the selected identity; cache revision changes reset paging. Automatic refresh respects each source interval (0s disables it).", width)...)
 		return lines

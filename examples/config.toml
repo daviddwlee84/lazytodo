@@ -8,6 +8,8 @@ kind = "github"
 host = "github.com"
 scope = "owner/repository"
 disabled = true # Enable after setting the correct scope.
+# priority_labels = ["P0", "P1", "priority::high", "urgent"] # Exact names; omit for auto hints.
+# priority_labels = [] # Disable priority hints for this source.
 
 [[sources]]
 id = "gitlab-work"

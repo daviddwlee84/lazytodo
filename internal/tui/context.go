@@ -14,8 +14,9 @@ import (
 )
 
 type repoDetectedMsg struct {
-	result repoctx.Result
-	err    error
+	result     repoctx.Result
+	err        error
+	generation uint64
 }
 type repoRegistration struct {
 	backend  backend
@@ -63,8 +64,9 @@ func (m *app) detectRepo() tea.Cmd {
 	if m.repoLookup == nil {
 		return nil
 	}
-	lookup, ctx := m.repoLookup, m.ctx
-	return func() tea.Msg { r, e := lookup(ctx); return repoDetectedMsg{r, e} }
+	m.repoGeneration++
+	lookup, ctx, generation := m.repoLookup, m.ctx, m.repoGeneration
+	return func() tea.Msg { r, e := lookup(ctx); return repoDetectedMsg{result: r, err: e, generation: generation} }
 }
 func (m *app) finishRepoRegistration() {
 	if m.repoReceipt == nil || m.repoRegistrationHandled {
@@ -197,7 +199,7 @@ func (m *app) repoAction(action string) tea.Cmd {
 	return nil
 }
 func (m *app) registerRepo() tea.Cmd {
-	if m.repoPending || m.repoRegister == nil || m.repoCursor < 0 || m.repoCursor >= len(m.repoResult.Targets) {
+	if m.configError != "" || m.editorRequested || m.editingConfig || m.repoPending || m.repoRegister == nil || m.repoCursor < 0 || m.repoCursor >= len(m.repoResult.Targets) {
 		return nil
 	}
 	// Do not allow a hidden action on a tiny terminal that cannot show its target.
@@ -304,7 +306,7 @@ func (m *app) openSourcePicker() {
 	m.overlayScroll = 0
 	m.sourceCursor = 0
 	m.gPending = false
-	for n, s := range m.config.Active() {
+	for n, s := range m.config.Sources {
 		if s.ID == m.scopeSource {
 			m.sourceCursor = n + 1
 		}
@@ -314,12 +316,16 @@ func (m *app) chooseSource() tea.Cmd {
 	if m.sourceCursor == 0 {
 		return m.changeScope("", false)
 	}
-	active := m.config.Active()
+	sources := m.config.Sources
 	index := m.sourceCursor - 1
-	if index < 0 || index >= len(active) {
+	if index < 0 || index >= len(sources) {
 		return nil
 	}
-	return m.changeScope(active[index].ID, false)
+	if sources[index].Disabled {
+		m.notice = "This source is disabled. Press e to edit its configuration."
+		return nil
+	}
+	return m.changeScope(sources[index].ID, false)
 }
 func (m *app) scopeName() string {
 	if m.scopeSource == "" {
