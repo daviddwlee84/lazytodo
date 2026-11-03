@@ -293,3 +293,24 @@ func TestFailedRefreshKeepsPagingRevision(t *testing.T) {
 		t.Fatal(next, e)
 	}
 }
+
+// Two configuration files share the XDG cache and list one repository under
+// different IDs (e.g. two TUIs). Neither refresh may hide the other's items.
+func TestTwoConfigurationsShareOneTarget(t *testing.T) {
+	work, f := setup(t)
+	home := New(work.Config, work.Paths, f)
+	home.Now = work.Now
+	home.Config.Sources = []config.Source{work.Config.Sources[0]}
+	home.Config.Sources[0].ID = "home"
+	f.snapshots["home"] = f.snapshots["a"]
+	ctx := context.Background()
+	for _, s := range []*Service{work, home, work} {
+		fetchOK(t, s)
+		for _, view := range []*Service{work, home} {
+			r, e := view.Query(ctx, QueryRequest{})
+			if e != nil || r.Total != 2 || r.Items[0].SourceID != view.Config.Sources[0].ID || r.Sources[0].State == "unknown" {
+				t.Fatalf("%s view after refresh: %+v %v", view.Config.Sources[0].ID, r, e)
+			}
+		}
+	}
+}

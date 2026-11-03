@@ -64,8 +64,9 @@ func TestWriteRetiresRetargetedAndYieldsUnconfiguredAlias(t *testing.T) {
 	if e := writeFixture(t, path, renamed, []config.Source{renamed}, "r1"); e != nil {
 		t.Fatal("rename blocked by unconfigured alias:", e)
 	}
-	if n := readCount(t, path, old); n != 0 {
-		t.Fatalf("old alias rows kept: %d", n)
+	// A configuration still listing the old alias resolves the same target.
+	if n := readCount(t, path, old); n != 1 {
+		t.Fatalf("old alias lost the shared target: %d", n)
 	}
 	// A configured, still-active source claiming the identity remains an error.
 	other := config.Source{ID: "other", Kind: "github", Host: "github.com", Scope: "fictional/other"}
@@ -85,5 +86,75 @@ func TestWriteRetiresRetargetedAndYieldsUnconfiguredAlias(t *testing.T) {
 	r, _ := Read(context.Background(), path, []config.Source{renamed}, search.Query{})
 	if _, ok := r.Sources["renamed"]; ok {
 		t.Fatal("retargeted source status retained")
+	}
+}
+
+// work.toml and personal.toml list the same repository under different IDs.
+// Alternating refreshes and a failed refresh must never hide either view.
+func TestSameTargetInTwoConfigurationsIsShared(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "cache.sqlite")
+	work := config.Source{ID: "work-repo", Kind: "github", Host: "github.com", Scope: "fictional/shared"}
+	home := work
+	home.ID = "home-repo"
+	check := func(step string) {
+		t.Helper()
+		for _, s := range []config.Source{work, home} {
+			r, e := Read(ctx, path, []config.Source{s}, search.Query{})
+			if e != nil || len(r.Items) != 2 {
+				t.Fatalf("%s: %s sees %d items (%v)", step, s.ID, len(r.Items), e)
+			}
+			for _, i := range r.Items {
+				if i.SourceID != s.ID {
+					t.Fatalf("%s: item labeled %q for %s", step, i.SourceID, s.ID)
+				}
+			}
+			if st, ok := r.Sources[s.ID]; !ok || st.Status.ID != s.ID || !st.Status.Complete {
+				t.Fatalf("%s: status for %s = %+v", step, s.ID, st)
+			}
+			q, _ := search.Parse("source:" + s.ID)
+			if r, _ = Read(ctx, path, []config.Source{s}, q); len(r.Items) != 2 {
+				t.Fatalf("%s: source filter for %s lost rows", step, s.ID)
+			}
+		}
+	}
+	for n, s := range []config.Source{work, home, work, home} {
+		if e := writeFixture(t, path, s, []config.Source{s}, "s1", "s2"); e != nil {
+			t.Fatal(n, e)
+		}
+		check("refresh " + s.ID)
+	}
+	// A failed refresh from the other configuration records status on the
+	// shared target without shadowing its last-good snapshot.
+	cached, _ := Sources(ctx, path, []config.Source{work})
+	failed := cached[work.ID].Status
+	failed.Error = "fictional outage"
+	if e := WriteStatus(ctx, path, work, failed); e != nil {
+		t.Fatal(e)
+	}
+	check("failed refresh")
+	if st, _ := Sources(ctx, path, []config.Source{home}); st[home.ID].Status.Error == "" {
+		t.Fatal("shared target status not visible to the other configuration")
+	}
+	// A different configured target claiming the same identities still fails.
+	other := config.Source{ID: "other", Kind: "github", Host: "github.com", Scope: "fictional/other"}
+	if e := writeFixture(t, path, other, []config.Source{home, other}, "s1"); e == nil {
+		t.Fatal("overlap with an aliased configured target accepted")
+	}
+	check("rejected overlap")
+}
+
+func TestTargetSpellingCaseSharesCache(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.sqlite")
+	upper := config.Source{ID: "a", Kind: "github", Host: "GitHub.com", Scope: "Fictional/Repo"}
+	lower := config.Source{ID: "b", Kind: "github", Host: "github.com", Scope: "fictional/repo"}
+	if e := writeFixture(t, path, upper, []config.Source{upper}, "r1"); e != nil {
+		t.Fatal(e)
+	}
+	if e := writeFixture(t, path, lower, []config.Source{lower}, "r1"); e != nil {
+		t.Fatal(e)
+	}
+	if readCount(t, path, upper) != 1 || readCount(t, path, lower) != 1 {
+		t.Fatal("case spellings of one repository erased each other")
 	}
 }

@@ -126,35 +126,25 @@ func Read(ctx context.Context, path string, active []config.Source, q search.Que
 		return result, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, "SELECT id,fingerprint,status FROM sources")
+	cached, err := cachedRows(ctx, tx)
 	if err != nil {
 		return result, err
 	}
-	for rows.Next() {
-		var id, fp, body string
-		if err = rows.Scan(&id, &fp, &body); err != nil {
-			rows.Close()
-			return result, err
-		}
-		var s model.SourceStatus
-		if err = json.Unmarshal([]byte(body), &s); err != nil {
-			rows.Close()
-			return result, err
-		}
-		result.Sources[id] = CachedSource{fp, s}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return result, err
-	}
+	resolved := resolve(cached, active)
+	// owner maps a configured source to the cache row holding its target; rows
+	// written under another alias (another --config) are relabeled on the way out.
+	owner, alias := map[string]string{}, map[string]string{}
 	var sourceParts []string
 	var args []any
 	for _, s := range active {
-		if c, ok := result.Sources[s.ID]; ok && c.Fingerprint == s.Fingerprint() {
-			sourceParts = append(sourceParts, "source_id=?")
-			args = append(args, s.ID)
+		r, ok := resolved[s.ID]
+		if !ok {
+			continue
 		}
+		result.Sources[s.ID] = r.CachedSource
+		owner[s.ID], alias[r.row] = r.row, s.ID
+		sourceParts = append(sourceParts, "source_id=?")
+		args = append(args, r.row)
 	}
 	if len(sourceParts) == 0 {
 		return result, nil
@@ -188,8 +178,12 @@ func Read(ctx context.Context, path string, active []config.Source, q search.Que
 		args = append(args, v)
 	}
 	for _, v := range q.Sources {
+		row, ok := owner[v]
+		if !ok {
+			row = v
+		}
 		where = append(where, "source_id=?")
-		args = append(args, v)
+		args = append(args, row)
 	}
 	for _, v := range q.States {
 		where = append(where, "state=?")
@@ -199,23 +193,120 @@ func Read(ctx context.Context, path string, active []config.Source, q search.Que
 		where = append(where, "EXISTS (SELECT 1 FROM labels l WHERE l.ref=items.ref AND l.name=?)")
 		args = append(args, v)
 	}
-	rows, err = tx.QueryContext(ctx, "SELECT body FROM items WHERE "+strings.Join(where, " AND "), args...)
+	rows, err := tx.QueryContext(ctx, "SELECT source_id,body FROM items WHERE "+strings.Join(where, " AND "), args...)
 	if err != nil {
 		return result, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var body string
-		if err = rows.Scan(&body); err != nil {
+		var row, body string
+		if err = rows.Scan(&row, &body); err != nil {
 			return result, err
 		}
 		var i model.Item
 		if err = json.Unmarshal([]byte(body), &i); err != nil {
 			return result, err
 		}
+		if id, ok := alias[row]; ok {
+			i.SourceID = id
+		}
 		result.Items = append(result.Items, i)
 	}
 	return result, rows.Err()
+}
+
+// Sources returns cached status for configured sources without reading items.
+func Sources(ctx context.Context, path string, active []config.Source) (map[string]CachedSource, error) {
+	out := map[string]CachedSource{}
+	db, err := open(ctx, path, false, cacheSchema)
+	if err != nil || db == nil {
+		return out, err
+	}
+	defer db.Close()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	cached, err := cachedRows(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+	for id, r := range resolve(cached, active) {
+		out[id] = r.CachedSource
+	}
+	return out, nil
+}
+
+type cachedRow struct {
+	id string
+	CachedSource
+}
+type resolvedSource struct {
+	row string // cache row (alias) holding the target's snapshot and status
+	CachedSource
+}
+
+func cachedRows(ctx context.Context, tx *sql.Tx) ([]cachedRow, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id,fingerprint,status FROM sources ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []cachedRow
+	for rows.Next() {
+		var r cachedRow
+		var body string
+		if err = rows.Scan(&r.id, &r.Fingerprint, &body); err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal([]byte(body), &r.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// resolve keys the cache by target, not alias. The cache is shared by every
+// configuration file, and two configurations may list the same repository under
+// different source IDs; both must see the one stored snapshot for that target.
+// A row under the source's own ID wins; otherwise the newest complete
+// observation of the same target fingerprint is used.
+func resolve(cached []cachedRow, active []config.Source) map[string]resolvedSource {
+	out := map[string]resolvedSource{}
+	for _, s := range active {
+		fp := s.Fingerprint()
+		var best *cachedRow
+		for n := range cached {
+			c := &cached[n]
+			if c.Fingerprint != fp {
+				continue
+			}
+			if c.id == s.ID {
+				best = c
+				break
+			}
+			if best == nil || newer(c.Status, best.Status) {
+				best = c
+			}
+		}
+		if best != nil {
+			r := resolvedSource{row: best.id, CachedSource: best.CachedSource}
+			r.Status.ID = s.ID
+			out[s.ID] = r
+		}
+	}
+	return out
+}
+func newer(a, b model.SourceStatus) bool {
+	if a.Complete != b.Complete {
+		return a.Complete
+	}
+	if a.ObservedAt == nil || b.ObservedAt == nil {
+		return a.ObservedAt != nil
+	}
+	return a.ObservedAt.After(*b.ObservedAt)
 }
 
 // WriteSnapshot never changes the old snapshot unless the whole transaction commits.
@@ -234,10 +325,12 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 	// this configuration may belong to another --config sharing the cache, or to a
 	// newer config a long-running TUI has not loaded; reads filter them out, so keep
 	// their last-good rows unless this complete snapshot claims the same identity.
-	valid := map[string]string{}
+	valid, targets := map[string]string{}, map[string]bool{}
 	for _, s := range active {
 		valid[s.ID] = s.Fingerprint()
+		targets[s.Fingerprint()] = true
 	}
+	fingerprints := map[string]string{}
 	rows, err := tx.QueryContext(ctx, "SELECT id,fingerprint FROM sources")
 	if err != nil {
 		return err
@@ -249,7 +342,10 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 			rows.Close()
 			return err
 		}
-		if want, ok := valid[id]; ok && want != fp {
+		fingerprints[id] = fp
+		// A configured ID retargeted elsewhere, or another alias of this same
+		// target (its replacement is the snapshot being committed).
+		if want, ok := valid[id]; (ok && want != fp) || (id != s.ID && fp == s.Fingerprint()) {
 			obsolete = append(obsolete, id)
 		}
 	}
@@ -280,11 +376,11 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 		var other string
 		err = tx.QueryRowContext(ctx, "SELECT source_id FROM items WHERE ref=?", i.Ref).Scan(&other)
 		if err == nil {
-			if _, configured := valid[other]; configured {
+			if _, configured := valid[other]; configured || targets[fingerprints[other]] {
 				return fmt.Errorf("canonical identity overlaps another configured source (%s)", other)
 			}
-			// An unconfigured alias (renamed, disabled or another config's source)
-			// for the same native identity yields to this complete observation.
+			// A different, unconfigured target claiming the same native identities
+			// (e.g. a moved snapshot path) yields to this complete observation.
 			if err = retire(other); err != nil {
 				return err
 			}
@@ -336,6 +432,28 @@ func WriteStatus(ctx context.Context, path string, s config.Source, status model
 		}
 		if _, err = tx.ExecContext(ctx, "DELETE FROM items WHERE source_id=?", s.ID); err != nil {
 			return err
+		}
+		old = ""
+	}
+	if old == "" {
+		// The target may be cached under another alias (another --config). Adopt
+		// that row instead of adding a status-only row that would shadow its
+		// last-good snapshot; the status describes the shared target.
+		var alias string
+		err = tx.QueryRowContext(ctx, "SELECT id FROM sources WHERE fingerprint=? AND id<>? ORDER BY id LIMIT 1", s.Fingerprint(), s.ID).Scan(&alias)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			if _, err = tx.ExecContext(ctx, "DELETE FROM sources WHERE id=?", s.ID); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, "UPDATE items SET source_id=? WHERE source_id=?", s.ID, alias); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, "UPDATE sources SET id=? WHERE id=?", s.ID, alias); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO sources(id,fingerprint,status) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,status=excluded.status", s.ID, s.Fingerprint(), string(b)); err != nil {

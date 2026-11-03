@@ -83,5 +83,5 @@ Verified **2026-11-04**, macOS Darwin/arm64. `go test ./...`, `go test -race ./.
 
 Not verified here: iTerm2/Terminal.app/Linux terminal emulators driven by a real pointer, OSC 52 acceptance by a particular terminal or by tmux `set-clipboard`, and Linux native clipboard helpers (xclip/xsel/wl-copy). Linux CI is expected to exercise the OSC 52-only path.
 
-Backend fixes in the same change are covered by new tests: shared-cache writes from two configurations keep each other's rows; a renamed alias yields to the same identity while configured overlaps still fail; a failed refresh keeps the paging revision; case-variant duplicate forge targets are rejected. The GitHub request now includes `sort=created&direction=asc` (fixture path updated).
+Backend fixes in the same change are covered by new tests: shared-cache writes from two configurations keep each other's rows; one repository listed under different IDs (or different letter case) in two configurations resolves to one shared target through alternating and failed refreshes, verified at store and service level (the service test fails on the previous commit); configured overlaps still fail; a failed refresh keeps the paging revision; case-variant duplicate forge targets are rejected. The GitHub request now includes `sort=created&direction=asc` (fixture path updated).
 

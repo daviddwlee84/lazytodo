@@ -26,8 +26,15 @@ type Source struct {
 	PriorityLabels  *[]string `toml:"priority_labels,omitempty" json:"priority_labels,omitempty"`
 }
 
+// Fingerprint identifies the fetch target independently of the source alias.
+// Forge hosts and repository/project paths are case-insensitive, so spellings
+// of one repository across configuration files share one cached target.
 func (s Source) Fingerprint() string {
-	b, _ := json.Marshal([]string{s.Kind, s.Host, s.Scope, s.Path})
+	host, scope := s.Host, s.Scope
+	if s.Kind != "snapshot" {
+		host, scope = strings.TrimSuffix(strings.ToLower(host), "."), strings.ToLower(scope)
+	}
+	b, _ := json.Marshal([]string{s.Kind, host, scope, s.Path})
 	return model.Digest(string(b))
 }
 func (s Source) Interval(fallback time.Duration) time.Duration {
@@ -237,12 +244,9 @@ func (c *Config) Validate(base string) error {
 			return fmt.Errorf("source %s: supported kinds are github, gitlab, snapshot", s.ID)
 		}
 		if !s.Disabled {
-			// Forge hosts and repository paths are case-insensitive: Owner/Repo and
-			// owner/repo would claim the same native identities.
+			// Case-insensitive for forges: Owner/Repo and owner/repo would claim
+			// the same native identities.
 			key := s.Fingerprint()
-			if s.Kind != "snapshot" {
-				key = SourceKey(*s)
-			}
 			if targets[key] {
 				return errors.New("duplicate source target")
 			}

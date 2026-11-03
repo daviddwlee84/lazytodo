@@ -50,8 +50,8 @@ func (s *Service) statuses(cached map[string]store.CachedSource) []model.SourceS
 	return out
 }
 func (s *Service) Sources(ctx context.Context) ([]model.SourceStatus, error) {
-	r, e := store.Read(ctx, s.Paths.Cache, nil, search.Query{})
-	return s.statuses(r.Sources), e
+	cached, e := store.Sources(ctx, s.Paths.Cache, s.Config.Active())
+	return s.statuses(cached), e
 }
 
 func (s *Service) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
