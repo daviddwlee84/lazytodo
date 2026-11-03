@@ -46,6 +46,14 @@ token_env = "LINEAR_API_KEY"      # the variable's NAME; export the key in your 
 
 `host` defaults to and must be `linear.app`. Create a personal API key in Linear (Settings → Security & access) and export it under the named variable before `fetch` or the TUI. The key is read only for an explicit or interval fetch: never by query/show/bare commands, never written to config, cache or errors. A missing variable reports `auth_missing` and sends no request.
 
+**Limit what the key can do.** lazytodo only reads, but the key carries whatever permissions it was created with. Every process that inherits the variable can use it: other programs and coding agents started from the same shell, and the `gh`/`glab` subprocesses lazytodo starts, which inherit lazytodo's environment. If Linear's key form offers the options, create the key with read-only permission, restricted to the teams you configure. Prefer setting the variable only for lazytodo over a global `export` in a shell profile, for example:
+
+```sh
+LINEAR_API_KEY="$(security find-generic-password -s lazytodo-linear -w)" bin/lazytodo
+```
+
+A team-restricted key works as long as it can read the configured team. A key that can't read it reports `not_found`.
+
 lazytodo posts two fixed GraphQL queries to `https://api.linear.app/graphql` with `Authorization: <key>` and refuses redirects. First it reads `viewer.organization` and resolves the team by key. A key from a different workspace reports `scope_mismatch`, and an unknown or renamed team key reports `not_found`; neither is treated as an empty team. Then it reads `issues(filter: team id, includeArchived: true, orderBy: createdAt, first: 50)` and follows cursors.
 
 - **Coverage:** every issue in the team, including completed, canceled and archived issues. Trashed issues are skipped. Sub-issues are separate issues. Projects, cycles, comments and custom views are not read.
