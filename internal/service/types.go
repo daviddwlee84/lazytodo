@@ -18,6 +18,7 @@ type Service struct {
 	Now              func() time.Time
 	ColorOverride    *string
 	IntervalOverride *string
+	MouseOverride    *bool
 }
 
 func New(c config.Config, p config.Paths, f Fetcher) *Service {

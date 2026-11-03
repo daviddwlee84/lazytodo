@@ -91,8 +91,14 @@ func (s *Service) Query(ctx context.Context, req QueryRequest) (QueryResult, err
 	for _, c := range s.Config.Active() {
 		revisionParts = append(revisionParts, c.ID+":"+c.Fingerprint())
 		if v, ok := r.Sources[c.ID]; ok && v.Fingerprint == c.Fingerprint() {
-			b, _ := json.Marshal(v.Status)
-			revisionParts = append(revisionParts, string(b))
+			// Observation identity only: attempt/retry/error metadata changes on a
+			// failed refresh without changing any cached row.
+			observed := ""
+			if v.Status.ObservedAt != nil {
+				observed = v.Status.ObservedAt.UTC().Format(time.RFC3339Nano)
+			}
+			b, _ := json.Marshal([]any{v.Status.Revision, observed, v.Status.Count, v.Status.Complete})
+			revisionParts = append(revisionParts, c.ID+"="+string(b))
 		}
 	}
 	for ref := range pins {

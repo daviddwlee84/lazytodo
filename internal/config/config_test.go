@@ -61,3 +61,17 @@ func TestDuplicateAndUnknownFields(t *testing.T) {
 		t.Fatal("unknown secret field accepted")
 	}
 }
+
+func TestDuplicateTargetIgnoresForgeCase(t *testing.T) {
+	c := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{
+		{ID: "a", Kind: "github", Scope: "Fictional/Repo"},
+		{ID: "b", Kind: "github", Host: "GitHub.com", Scope: "fictional/repo"},
+	}}
+	if e := c.Validate(t.TempDir()); e == nil {
+		t.Fatal("case-variant duplicate target accepted")
+	}
+	c.Sources[1].Disabled = true
+	if e := c.Validate(t.TempDir()); e != nil {
+		t.Fatal("disabled duplicate rejected:", e)
+	}
+}

@@ -1,6 +1,7 @@
 # Copy/edit only the sources you intend to query. Native gh/glab own credentials.
 refresh_interval = "5m"
 color = "auto"
+mouse = true # TUI click/wheel/drag-to-copy; false keeps native terminal selection (M toggles at runtime).
 
 [[sources]]
 id = "github-work"

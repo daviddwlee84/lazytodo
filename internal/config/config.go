@@ -46,6 +46,7 @@ type Config struct {
 	RepoContext     bool     `toml:"repo_context" json:"repo_context"`
 	RefreshInterval string   `toml:"refresh_interval" json:"refresh_interval"`
 	Color           string   `toml:"color" json:"color"`
+	Mouse           bool     `toml:"mouse" json:"mouse"`
 	Sources         []Source `toml:"sources" json:"sources"`
 	Views           []View   `toml:"views" json:"views"`
 }
@@ -121,7 +122,7 @@ func readFile(path string, explicit bool) (Config, error) {
 	return parseFile(b)
 }
 func parseFile(b []byte) (Config, error) {
-	c := Config{RepoContext: true, RefreshInterval: "5m", Color: "auto", Sources: []Source{}, Views: []View{}}
+	c := Config{RepoContext: true, RefreshInterval: "5m", Color: "auto", Mouse: true, Sources: []Source{}, Views: []View{}}
 	if len(b) > 0 {
 		dec := toml.NewDecoder(strings.NewReader(string(b))).DisallowUnknownFields()
 		if err := dec.Decode(&c); err != nil {
@@ -236,7 +237,12 @@ func (c *Config) Validate(base string) error {
 			return fmt.Errorf("source %s: supported kinds are github, gitlab, snapshot", s.ID)
 		}
 		if !s.Disabled {
+			// Forge hosts and repository paths are case-insensitive: Owner/Repo and
+			// owner/repo would claim the same native identities.
 			key := s.Fingerprint()
+			if s.Kind != "snapshot" {
+				key = SourceKey(*s)
+			}
 			if targets[key] {
 				return errors.New("duplicate source target")
 			}
@@ -260,6 +266,7 @@ const Example = `# Credentials remain with gh/glab. No source is registered auto
 refresh_interval = "5m"
 color = "auto"
 repo_context = true # Read local Git context in the TUI; false disables suggestions.
+mouse = true # TUI click/wheel/drag-copy; false (or --mouse=false, or M) keeps native terminal selection.
 # Prefer lazytodo init to select real sources. Examples below remain disabled.
 
 # [[sources]]

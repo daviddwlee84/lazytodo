@@ -339,9 +339,15 @@ func (m *app) scopeName() string {
 	return m.scopeSource
 }
 func (m *app) repoLines(width int) []string {
+	lines, _ := m.repoRows(width)
+	return lines
+}
+func (m *app) repoRows(width int) ([]string, []rowHit) {
 	var lines []string
+	var hits []rowHit
 	if !m.repoConfirm {
 		lines = append(lines, "Several Git remotes are available. Choose a repository:", "")
+		hits = padHits(nil, len(lines))
 		capacity := max(1, m.contentHeight()-5)
 		start := min(max(0, m.repoCursor-capacity+1), max(0, len(m.repoResult.Targets)-capacity))
 		for n := start; n < len(m.repoResult.Targets) && n < start+capacity; n++ {
@@ -351,12 +357,13 @@ func (m *app) repoLines(width int) []string {
 				prefix = "> "
 			}
 			lines = append(lines, fit(prefix+t.Kind+" · "+t.Host+"/"+t.Scope, width))
+			hits = append(hits, rowHit{cursor: n})
 		}
 		lines = append(lines, "", "Enter reviews/selects; Esc ignores for this session.")
-		return lines
+		return lines, padHits(hits, len(lines))
 	}
 	if m.repoCursor < 0 || m.repoCursor >= len(m.repoResult.Targets) {
-		return nil
+		return nil, nil
 	}
 	target := m.repoResult.Targets[m.repoCursor]
 	lines = append(lines, wrapped("Current repository: "+target.Scope, width)...)
@@ -368,7 +375,9 @@ func (m *app) repoLines(width int) []string {
 	} else {
 		buttons := []string{" Ignore this time ", " Add + fetch "}
 		buttons[m.repoButton] = "[" + strings.TrimSpace(buttons[m.repoButton]) + "]"
+		hits = padHits(nil, len(lines))
+		hits = append(hits, rowHit{cursor: -1, spans: buttonSpans(buttons, "    ")})
 		lines = append(lines, strings.Join(buttons, "    "), "Tab/←→ choose · Enter confirm · Esc ignore")
 	}
-	return lines
+	return lines, padHits(hits, len(lines))
 }

@@ -12,9 +12,14 @@ Future candidates, not commitments. Current behavior lives in [README.md](README
 - [ ] **[L] Explicit intake and dispatch** — One reviewed destination, idempotency, native receipt and uncertain-outcome handling. → [research](backlog/routing.md)
 - [ ] **[L] Google Tasks reader** — Read-only OAuth, tasklist identities, hidden/completed/deleted coverage, date-only due. → [research](backlog/source-adapters.md)
 - [ ] **[M] Public installation and upgrades** — Confirm module/remote, version provenance, supported installation and upgrade/check path. → [research](backlog/scaling.md)
+- [ ] **[M] Incremental native fetch** — Every refresh re-reads full history (GitHub /issues also returns PRs) under a 2-minute/64 MiB budget; evaluate since=/cursor paging, PR-free reads and timeout errors that name the limit. → [research](backlog/source-adapters.md)
+- [ ] **[M] Search grammar: assignee, negation, OR** — Assignees are fetched but not searchable; repeated state:/source: filters silently AND to empty. Keep exact native spelling and shared service predicates.
+- [ ] **[S] fetch --force past failure backoff** — After re-login an explicit fetch still reports backoff until the retry window ends; report backoff skips separately from failures.
 
 ## P3
-- [ ] **[L] Measured scaling and remote surfaces** — Evaluate incremental fetch, indexing, a thin MCP wrapper and pin sync only against demonstrated needs. → [research](backlog/scaling.md)
+- [ ] **[L] Measured scaling and remote surfaces** — Evaluate incremental fetch, indexing (long-lived DB handle, SQL ORDER/LIMIT, FTS for per-keystroke search), a thin MCP wrapper and pin sync only against demonstrated needs. → [research](backlog/scaling.md)
+- [ ] **[S] Built-in view resolution in service** — All/Open/Pinned are resolved in both internal/cli/root.go and internal/tui/model.go; move to service and reserve Open consistently in config validation.
+- [ ] **[S] Explicit cache prune** — Snapshot writes no longer retire sources absent from the writer's config (shared cache across --config files); offer an explicit, reviewed prune of unconfigured cached sources.
 
 ## P?
 - [ ] **[?/L] Native Beads / td readers** — Version/backend and filesystem side-effect trials before any periodic native invocation. → [research](backlog/source-adapters.md)

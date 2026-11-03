@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -93,7 +94,8 @@ func (m *app) clamp() {
 
 func (m *app) View() tea.View {
 	v := m.current()
-	header := "lazytodo  /  " + oneLine(v.name) + "  /  " + oneLine(m.scopeName())
+	lead, viewName, sep, scope := m.headerParts()
+	header := lead + viewName + sep + scope
 	if m.scopeSource != "" && m.scopeSource == m.repoSourceID {
 		header += "  (cwd)"
 	}
@@ -131,12 +133,12 @@ func (m *app) View() tea.View {
 		body = m.renderPane(name, lines[start:], m.width, true)
 	} else if m.width >= 90 {
 		left := m.renderPane("Items", m.listLines(m.listWidth()-2), m.listWidth(), m.focus == listPane)
-		right := m.renderPane("Preview", m.visiblePreview(), m.width-m.listWidth(), m.focus == previewPane)
+		right := m.renderPane(m.previewTitle(), m.visiblePreview(), m.width-m.listWidth(), m.focus == previewPane)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	} else if m.focus == listPane {
 		body = m.renderPane("Items", m.listLines(max(1, m.width-2)), m.width, true)
 	} else {
-		body = m.renderPane("Preview", m.visiblePreview(), m.width, true)
+		body = m.renderPane(m.previewTitle(), m.visiblePreview(), m.width, true)
 	}
 	summary := m.sourceSummary()
 	if m.sourceError != "" {
@@ -177,6 +179,10 @@ func (m *app) View() tea.View {
 	}
 	view := tea.NewView(strings.Join(out, "\n"))
 	view.AltScreen = true
+	if m.mouse {
+		// Cell motion: click, release, wheel and drag motion (for preview copy).
+		view.MouseMode = tea.MouseModeCellMotion
+	}
 	return view
 }
 func (m *app) renderPane(title string, lines []string, width int, focused bool) string {
@@ -233,6 +239,14 @@ func (m *app) listLines(width int) []string {
 		return wrapped("No cached items yet.\nRefresh to fetch configured sources.\nOpen Sources for unknown, stale or failed source status.", width)
 	}
 	lines := make([]string, 0, m.contentHeight())
+	// Size the repo column to the widest visible label instead of always padding to the cap.
+	repoWidth := 0
+	if m.scopeSource == "" {
+		for index := v.scroll; index < len(v.items) && index < v.scroll+m.contentHeight(); index++ {
+			repoWidth = max(repoWidth, ansi.StringWidth(m.repoLabel(v.items[index])))
+		}
+		repoWidth = min(repoWidth, min(32, max(12, width/4)))
+	}
 	for index := v.scroll; index < len(v.items) && len(lines) < m.contentHeight(); index++ {
 		item := v.items[index]
 		prefix := "  "
@@ -258,7 +272,7 @@ func (m *app) listLines(width int) []string {
 			metadata = m.stateLabel(item.State) + " "
 		}
 		if m.scopeSource == "" {
-			metadata += pad(m.repoLabel(item), min(32, max(12, width/4))) + " "
+			metadata += pad(m.repoLabel(item), repoWidth) + " "
 		}
 		if width >= 55 {
 			metadata += pad(nativeNumber(item), 7) + " "
@@ -279,20 +293,42 @@ func (m *app) listLines(width int) []string {
 func (m *app) visiblePreview() []string {
 	lines := m.previewLines(m.previewWidth())
 	start := min(m.current().preview, max(0, len(lines)-1))
-	return lines[start:]
+	visible := lines[start:min(len(lines), start+m.contentHeight())]
+	if m.sel.active {
+		if item, ok := m.selected(); ok && item.Ref == m.sel.ref {
+			visible = append([]string(nil), visible...)
+			for i := range visible {
+				visible[i] = m.highlight(visible[i], start+i)
+			}
+		}
+	}
+	return visible
+}
+
+// previewTitle reports the scroll position once the preview overflows.
+func (m *app) previewTitle() string {
+	total, rows := len(m.previewLines(m.previewWidth())), m.contentHeight()
+	if total <= rows {
+		return "Preview"
+	}
+	start := min(m.current().preview, max(0, total-1))
+	return fmt.Sprintf("Preview · %d–%d/%d", start+1, min(total, start+rows), total)
 }
 func (m *app) previewLines(width int) []string {
 	item, ok := m.selected()
 	if !ok {
 		return wrapped("Select an item to preview its cached content.\n\nEnter inspects; opening the native URL is always explicit.", width)
 	}
-	var sections []string
-	sections = append(sections, oneLine(item.Title))
+	var lines []string
+	for _, l := range wrapped(oneLine(item.Title), width) {
+		lines = append(lines, m.strong(l))
+	}
 	state := item.State
 	if state == "" {
 		state = "unknown"
 	}
-	meta := oneLine(item.DisplayRef) + "  ·  " + oneLine(state)
+	// Each part is sanitized by oneLine before styling; wrap without re-sanitizing.
+	meta := oneLine(item.DisplayRef) + "  ·  " + m.stateColor(state, oneLine(state))
 	if item.NativeType != "" {
 		meta += "  ·  " + oneLine(item.NativeType)
 	}
@@ -302,45 +338,58 @@ func (m *app) previewLines(width int) []string {
 	if item.Pinned {
 		meta += "  ·  pinned locally"
 	}
-	sections = append(sections, meta, "Source: "+oneLine(item.Origin.Provider)+" · "+oneLine(item.Origin.Authority))
+	lines = append(lines, strings.Split(ansi.Wrap(meta, max(1, width), ""), "\n")...)
+	// field renders a dim "Key:" with its value; the colon keeps plain-text greps stable.
+	field := func(key, value string) {
+		for n, l := range wrapped(key+": "+value, width) {
+			if n == 0 && strings.HasPrefix(l, key+":") {
+				l = m.tint(key+":", true) + strings.TrimPrefix(l, key+":")
+			}
+			lines = append(lines, l)
+		}
+	}
+	field("Source", oneLine(item.Origin.Provider)+" · "+oneLine(item.Origin.Authority))
 	if !item.Available {
-		sections = append(sections, "Unavailable: this local pin is absent from the current source snapshot.")
+		lines = append(lines, wrapped("Unavailable: this local pin is absent from the current source snapshot.", width)...)
 	}
 	if hints := m.priorityHints(item); len(hints) > 0 {
 		names := make([]string, 0, len(hints))
 		for _, l := range hints {
 			names = append(names, oneLine(l.Name))
 		}
-		sections = append(sections, "Priority labels: "+strings.Join(names, ", "))
+		field("Priority labels", strings.Join(names, ", "))
 	}
-	if item.Labels == nil {
-		sections = append(sections, "Labels: unknown / unsupported")
-	} else if len(item.Labels) == 0 {
-		sections = append(sections, "Labels: none")
-	} else {
-		var labels []string
-		for _, l := range item.Labels {
-			labels = append(labels, oneLine(l.Name))
+	switch {
+	case item.Labels == nil:
+		field("Labels", "unknown / unsupported")
+	case len(item.Labels) == 0:
+		field("Labels", "none")
+	default:
+		rules := m.priorityLabelsFor(item.SourceID)
+		chips := make([]string, 0, len(item.Labels))
+		for _, l := range m.orderedLabels(item) {
+			chips = append(chips, m.labelChip(l, model.PriorityLabel(l.Name, rules)))
 		}
-		sections = append(sections, "Labels: "+strings.Join(labels, ", "))
+		lines = append(lines, strings.Split(ansi.Wrap(m.tint("Labels:", true)+" "+strings.Join(chips, " "), max(1, width), ""), "\n")...)
 	}
-	if item.Assignees == nil {
-		sections = append(sections, "Assignees: unknown / unsupported")
-	} else if len(item.Assignees) == 0 {
-		sections = append(sections, "Assignees: none")
-	} else {
-		var names []string
-		for _, a := range item.Assignees {
+	actors := func(key string, list []model.Actor, unknown bool) {
+		if unknown {
+			field(key, "unknown / unsupported")
+			return
+		}
+		if len(list) == 0 {
+			field(key, "none")
+			return
+		}
+		names := make([]string, 0, len(list))
+		for _, a := range list {
 			names = append(names, oneLine(a.Name))
 		}
-		sections = append(sections, "Assignees: "+strings.Join(names, ", "))
+		field(key, strings.Join(names, ", "))
 	}
+	actors("Assignees", item.Assignees, item.Assignees == nil)
 	if len(item.Delegates) > 0 {
-		var names []string
-		for _, a := range item.Delegates {
-			names = append(names, oneLine(a.Name))
-		}
-		sections = append(sections, "Delegates: "+strings.Join(names, ", "))
+		actors("Delegates", item.Delegates, false)
 	}
 	var times []string
 	if item.UpdatedAt != nil {
@@ -350,27 +399,30 @@ func (m *app) previewLines(width int) []string {
 		times = append(times, "Cached: "+relativeTime(item.ObservedAt)+" · "+m.sourceStatus(item.SourceID).State)
 	}
 	if len(times) > 0 {
-		sections = append(sections, strings.Join(times, "  |  "))
+		lines = append(lines, m.tint(fit(strings.Join(times, "  |  "), width), true))
 	}
 	if item.URL != "" {
-		sections = append(sections, "URL: "+oneLine(item.URL))
+		field("URL", oneLine(item.URL))
 	}
-	sections = append(sections, "")
+	lines = append(lines, m.tint(strings.Repeat("─", max(1, width)), true))
 	body := strings.TrimSpace(model.Plain(item.Body))
 	if body == "" {
-		body = "No body in cached content."
+		return append(lines, m.tint("No body in cached content.", true))
 	}
-	sections = append(sections, body)
-	lines := wrapped(strings.Join(sections, "\n"), width)
-	if len(lines) > 0 {
-		lines[0] = m.strong(lines[0])
-	}
-	return lines
+	return append(lines, m.renderBody(item.Ref, body, width)...)
 }
 func (m *app) overlayLines(width int) []string {
+	lines, _ := m.overlayRows(width)
+	return lines
+}
+
+// overlayRows returns overlay lines and, in parallel, what a click on each line
+// selects. The same loop builds both, so scroll windows are never recomputed.
+func (m *app) overlayRows(width int) ([]string, []rowHit) {
 	switch m.overlay {
 	case viewsOverlay:
 		var lines []string
+		var hits []rowHit
 		for index, v := range m.views {
 			prefix := "  "
 			if index == m.overlayCursor {
@@ -384,21 +436,22 @@ func (m *app) overlayLines(width int) []string {
 				label += "  / " + oneLine(v.filter)
 			}
 			lines = append(lines, fit(label, width))
+			hits = append(hits, rowHit{cursor: index})
 		}
-		return lines
+		return lines, hits
 	case sourcesOverlay:
 		if len(m.config.Sources) == 0 {
 			lines := wrapped("No sources configured. Press e to edit without leaving the TUI, or use lazytodo init for guided selection. This screen never probes providers.", width)
 			if m.configError != "" {
 				lines = append(lines, wrapped("Config not applied: "+m.configError, width)...)
 			}
-			return lines
+			return lines, nil
 		}
-		return m.sourcePickerLines(width)
+		return m.sourcePickerRows(width)
 	case repoOverlay:
-		return m.repoLines(width)
+		return m.repoRows(width)
 	case tagsOverlay:
-		return m.tagLines(width)
+		return m.tagRows(width)
 	case helpOverlay:
 		lines := []string{"NAVIGATION"}
 		for _, hint := range m.hints(navigation, false) {
@@ -410,9 +463,11 @@ func (m *app) overlayLines(width int) []string {
 		}
 		lines = append(lines, wrapped("Cursor edits do not reset selection. Changed text does. Searches include cached body text. Filters: source:, state:, label:, pinned:.", width)...)
 		lines = append(lines, "", "SOURCES / TAGS", "s then e edits local sources and reloads valid settings on return.", "t shows the selected item's labels; Enter adds an exact label filter.", "Priority labels are display hints, not shared urgency or sorting ranks.")
+		lines = append(lines, "", "MOUSE")
+		lines = append(lines, wrapped("Click selects (click the selected row again to inspect); click a picker row twice to choose; wheel scrolls the pane under the pointer; click footer hints or the view/scope in the header. Drag in the preview to select text; release copies it (OSC 52 plus the native clipboard). y copies the URL, Y the raw body. M turns mouse capture off so the terminal's own selection works; while capture is on, hold Shift (Option in iTerm2) to drag a native selection. Config: mouse = false or --mouse=false.", width)...)
 		lines = append(lines, "", "CONTEXT")
 		lines = append(lines, wrapped("* local pin; ~ pin pending. The > pane heading indicates focus; the > row indicates selection. Narrow screens show only the focused pane. Source unknown/stale/error states remain visible; Sources shows cached details without probes. Pinning never changes the source. Refresh follows the selected identity; cache revision changes reset paging. Automatic refresh respects each source interval (0s disables it).", width)...)
-		return lines
+		return lines, nil
 	}
-	return nil
+	return nil, nil
 }

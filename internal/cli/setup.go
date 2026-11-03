@@ -55,6 +55,9 @@ func addSetupCommands(root, sources *cobra.Command, pathFlag *string, jsonMode *
 		if draft.Config.Color != "auto" && draft.Config.Color != "always" && draft.Config.Color != "never" {
 			return service.Fail("usage", "color must be auto, always or never")
 		}
+		if c.Flags().Changed("mouse") {
+			draft.Config.Mouse, _ = c.Flags().GetBool("mouse")
+		}
 		result, e := tui.RunSetup(c.Context(), draft, source.New())
 		if e != nil {
 			return e

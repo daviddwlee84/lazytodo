@@ -99,7 +99,7 @@ func TestGitHubPaginationAndPRExclusion(t *testing.T) {
 	calls := 0
 	f := &Fetcher{Runner: runnerFunc(func(ctx context.Context, name string, args []string, input []byte) (Result, error) {
 		calls++
-		want := []string{"api", "--hostname", "github.example", "--method", "GET", "--include", fmt.Sprintf("repos/org/repo/issues?state=all&per_page=100&page=%d", calls)}
+		want := []string{"api", "--hostname", "github.example", "--method", "GET", "--include", fmt.Sprintf("repos/org/repo/issues?state=all&sort=created&direction=asc&per_page=100&page=%d", calls)}
 		if name != "gh" || !reflect.DeepEqual(args, want) || len(input) != 0 {
 			t.Fatalf("unsafe or unexpected request: %s %#v", name, args)
 		}

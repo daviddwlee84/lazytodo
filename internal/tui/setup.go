@@ -251,6 +251,8 @@ func (m *setupApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.styleSetupInput()
 	case tea.KeyPressMsg:
 		return m, m.setupKey(msg)
+	case tea.MouseMsg:
+		return m, m.setupMouse(msg)
 	default:
 		if m.editing || m.filtering {
 			return m, m.setupInput(msg)
@@ -756,10 +758,47 @@ func (m *setupApp) setupHelp() []string {
 	return lines
 }
 
+// setupHit describes what a click on one rendered wizard line selects.
+type setupHitKind uint8
+
+const (
+	setupHitNone setupHitKind = iota
+	setupHitTarget
+	setupHitCandidate
+	setupHitButtons
+	setupHitFilter
+)
+
+type setupHit struct {
+	kind  setupHitKind
+	index int
+	spans []hitSpan
+}
+
+// setupBox is the cell range of the "[x]" checkbox on target/candidate rows.
+const setupBoxFrom, setupBoxTo = 2, 5
+
 func (m *setupApp) View() tea.View {
+	lines, _ := m.frame()
+	if m.color && len(lines) > 0 {
+		lines[0] = lipgloss.NewStyle().Bold(true).Render(lines[0])
+	}
+	view := tea.NewView(strings.Join(lines, "\n"))
+	view.AltScreen = true
+	if m.draft.Config.Mouse {
+		view.MouseMode = tea.MouseModeCellMotion
+	}
+	return view
+}
+
+// frame renders the wizard and, in parallel, the click target of each line, so
+// mouse hit testing never recomputes scroll windows or truncation separately.
+func (m *setupApp) frame() ([]string, []setupHit) {
 	stage := []string{"1/3 Targets", "2/3 Candidates", "3/3 Review"}[m.stage]
 	header := append([]string{"lazytodo setup · " + stage}, wrapped("Config: "+m.draft.Path, m.width)...)
 	var body, suffix []string
+	var bodyHits []setupHit
+	var suffixHits []setupHit
 	if m.help {
 		lines := m.setupHelp()
 		start := min(m.helpScroll, max(0, len(lines)-max(1, m.height-len(header)-2)))
@@ -768,6 +807,15 @@ func (m *setupApp) View() tea.View {
 		switch m.stage {
 		case setupTargets:
 			body = m.targetLines()
+			if !m.editing {
+				// targetLines: three intro lines, then one row per target.
+				for i := range m.targets {
+					for len(bodyHits) < 3+i {
+						bodyHits = append(bodyHits, setupHit{})
+					}
+					bodyHits = append(bodyHits, setupHit{kind: setupHitTarget, index: i})
+				}
+			}
 		case setupCandidates:
 			header = append(header, m.discoveryLines()...)
 			header = append(header, "Order: GitHub updated_at / GitLab last_activity_at (not issue time).")
@@ -830,6 +878,7 @@ func (m *setupApp) View() tea.View {
 					stamp = c.UpdatedAt.UTC().Format("2006-01-02")
 				}
 				body = append(body, focus+"["+mark+"] "+stamp+" "+oneLine(c.Host+"/"+c.Scope)+note)
+				bodyHits = append(bodyHits, setupHit{kind: setupHitCandidate, index: i})
 			}
 			if len(rows) == 0 {
 				body = []string{"No visible candidates yet. Clear / filter, r retry, or Esc choose hosts.", "Check setup/authentication for the selected hosts:"}
@@ -839,6 +888,7 @@ func (m *setupApp) View() tea.View {
 					}
 				}
 				body = append(body, setupManual()...)
+				bodyHits = nil
 			}
 		case setupReview:
 			// The wrapped header names the exact configuration destination.
@@ -849,6 +899,7 @@ func (m *setupApp) View() tea.View {
 			buttons := []string{" Back ", " Cancel ", " Save "}
 			buttons[m.button] = "[" + strings.TrimSpace(buttons[m.button]) + "]"
 			suffix = []string{fmt.Sprintf("Review lines %d–%d/%d · ↑↓/jk scroll", min(start+1, len(lines)), min(start+available, len(lines)), len(lines)), strings.Join(buttons, "  ")}
+			suffixHits = []setupHit{{}, {kind: setupHitButtons, spans: buttonSpans(buttons, "  ")}}
 		}
 	}
 	footer := []string{}
@@ -873,22 +924,88 @@ func (m *setupApp) View() tea.View {
 	if len(body) > room {
 		body = body[:room]
 	}
+	hits := make([]setupHit, len(header))
+	if m.stage == setupCandidates && !m.help && len(header) > 0 {
+		hits[len(header)-1] = setupHit{kind: setupHitFilter}
+	}
+	for i := range body {
+		h := setupHit{}
+		if i < len(bodyHits) {
+			h = bodyHits[i]
+		}
+		hits = append(hits, h)
+	}
 	lines := append(header, body...)
 	lines = append(lines, suffix...)
+	hits = append(hits, suffixHits...)
+	for len(hits) < len(lines) {
+		hits = append(hits, setupHit{})
+	}
 	lines = append(lines, oneLine(m.notice), footerText)
+	hits = append(hits, setupHit{}, setupHit{})
 	if m.setupSmall() {
 		lines = []string{"Setup " + stage, "Resize terminal", "Esc back; Ctrl+C cancel"}
+		hits = make([]setupHit, len(lines))
 	}
 	if len(lines) > m.height {
-		lines = lines[:m.height]
+		lines, hits = lines[:m.height], hits[:m.height]
 	}
 	for i := range lines {
 		lines[i] = fit(lines[i], m.width)
 	}
-	if m.color && len(lines) > 0 {
-		lines[0] = lipgloss.NewStyle().Bold(true).Render(lines[0])
+	return lines, hits
+}
+
+func (m *setupApp) setupMouse(msg tea.MouseMsg) tea.Cmd {
+	if !m.draft.Config.Mouse || m.editing || m.filtering || m.saving || m.setupSmall() {
+		return nil
 	}
-	view := tea.NewView(strings.Join(lines, "\n"))
-	view.AltScreen = true
-	return view
+	ev := msg.Mouse()
+	switch msg.(type) {
+	case tea.MouseWheelMsg:
+		switch ev.Button {
+		case tea.MouseWheelUp:
+			return m.setupAction("up")
+		case tea.MouseWheelDown:
+			return m.setupAction("down")
+		}
+	case tea.MouseClickMsg:
+		if ev.Button != tea.MouseLeft || m.help {
+			return nil
+		}
+		_, hits := m.frame()
+		if ev.Y < 0 || ev.Y >= len(hits) {
+			return nil
+		}
+		h := hits[ev.Y]
+		box := ev.X >= setupBoxFrom && ev.X < setupBoxTo
+		switch h.kind {
+		case setupHitTarget:
+			// A click on the checkbox, or on the focused row, toggles like Space.
+			if box || m.targetCursor == h.index {
+				m.targetCursor = h.index
+				return m.setupAction("toggle")
+			}
+			m.targetCursor = h.index
+		case setupHitCandidate:
+			if box || m.cursor == h.index {
+				m.cursor = h.index
+				return m.setupAction("toggle")
+			}
+			m.cursor = h.index
+		case setupHitFilter:
+			return m.setupAction("filter")
+		case setupHitButtons:
+			for _, s := range h.spans {
+				if ev.X >= s.from && ev.X < s.to {
+					// Review keeps Back as default; Save needs a focused second click.
+					if m.button == s.id {
+						return m.setupAction("next")
+					}
+					m.button = s.id
+				}
+			}
+		}
+	}
+	return nil
 }

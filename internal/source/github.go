@@ -40,7 +40,9 @@ func (s *fetchState) github(ctx context.Context) (model.Snapshot, error) {
 	parts := strings.Split(s.cfg.Scope, "/")
 	endpoint := "repos/" + url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]) + "/issues"
 	for page := 1; ; {
-		path := endpoint + "?state=all&per_page=100&page=" + strconv.Itoa(page)
+		// Oldest-first: issues created mid-fetch append to the last page instead of
+		// shifting a boundary item onto the next page (a duplicate identity).
+		path := endpoint + "?state=all&sort=created&direction=asc&per_page=100&page=" + strconv.Itoa(page)
 		body, headers, err := s.api(ctx, "gh", []string{"api", "--hostname", s.cfg.Host, "--method", "GET", "--include", path}, nil)
 		if err != nil {
 			return model.Snapshot{}, err

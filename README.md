@@ -28,6 +28,7 @@ Example explicit sources:
 ```toml
 refresh_interval = "5m"
 color = "auto"
+mouse = true # false keeps native terminal selection; M toggles in the TUI
 
 [[sources]]
 id = "github-work"
@@ -92,6 +93,8 @@ GitHub excludes PRs. GitLab needs the Work Items GraphQL fields used by the adap
 | Enter | Accept a search; from navigation, inspect the selected item |
 | `p` | Toggle a **local** pin |
 | `o` | Explicitly open the native source URL |
+| `y` / `Y` | Copy the selected item's URL / raw body (markdown) to the clipboard |
+| `M` | Turn mouse capture off/on (off restores the terminal's own selection) |
 | `r` | Refresh sources asynchronously |
 | `v` | Open / All / Pinned / saved views |
 | `s`, then Enter | Focus one repository or All sources; inspect cached status/errors |
@@ -103,7 +106,9 @@ GitHub excludes PRs. GitLab needs the Work Items GraphQL fields used by the adap
 
 The TUI starts in **Open** (closed items remain available under All). Views and source scope are independent: choose a repo with `s`, then use `v` to see its Open/All/Pinned items. `s` → All sources returns to cross-repo browsing. Each source/view keeps its filter and selection. Rows use readable repository names and issue numbers rather than truncated internal IDs; the footer summarizes freshness/errors, with details in `s`.
 
-Wide terminals show list + preview; narrow terminals show the focused pane. No mouse capture, mandatory icons or Vim insert mode. A refresh follows the selected identity rather than the old row number. Manual `r` refreshes the focused source, or all configured sources when All sources is selected.
+Wide terminals show list + preview; narrow terminals show the focused pane. No mandatory icons or Vim insert mode. The preview renders issue markdown (headings, emphasis, lists, tables, code); single newlines stay line breaks as on GitHub/GitLab, links are shown as text plus URL and are never clickable terminal hyperlinks.
+
+**Mouse** (on by default): click a row to select it, click the selected row again to inspect; wheel scrolls the pane under the pointer; click a picker row to move the cursor and click it again to choose; click footer hints, the view name or the scope name in the header. Quit is never a click target, and adding a cwd repository still takes two deliberate clicks (focus, then confirm). **Drag in the preview to select text; releasing copies it** — via OSC 52 (works over SSH; tmux needs `set-clipboard on`) and, locally, the native clipboard. Copied text is what the preview displays, so soft wraps become newlines; use `Y` for the original body. While capture is on, hold Shift (Option in iTerm2) for a native terminal selection, or press `M` to release capture. Disable it with `mouse = false` in `config.toml` or `--mouse=false`; `lazytodo init` honors the same setting. A refresh follows the selected identity rather than the old row number. Manual `r` refreshes the focused source, or all configured sources when All sources is selected.
 
 ```sh
 bin/lazytodo query '登入 state:open label:"needs review"'

@@ -44,8 +44,8 @@ func nativeNumber(item model.Item) string {
 	}
 	return ""
 }
-func (m *app) stateLabel(state string) string {
-	text := pad(oneLine(state), 7)
+func (m *app) stateLabel(state string) string { return m.stateColor(state, pad(oneLine(state), 7)) }
+func (m *app) stateColor(state, text string) string {
 	if !m.color {
 		return text
 	}
@@ -96,8 +96,13 @@ func sourceScope(s config.Source, status model.SourceStatus) string {
 	return s.ID
 }
 func (m *app) sourcePickerLines(width int) []string {
+	lines, _ := m.sourcePickerRows(width)
+	return lines
+}
+func (m *app) sourcePickerRows(width int) ([]string, []rowHit) {
 	active := m.config.Sources
 	lines := []string{"Enter focuses · e edits sources (including disabled) · Esc returns", ""}
+	hits := []rowHit{noHit, noHit}
 	capacity := max(1, m.contentHeight()-10)
 	start := min(max(0, m.sourceCursor-capacity+1), max(0, len(active)+1-capacity))
 	for index := start; index < len(active)+1 && index < start+capacity; index++ {
@@ -105,6 +110,7 @@ func (m *app) sourcePickerLines(width int) []string {
 		if index == m.sourceCursor {
 			prefix = "> "
 		}
+		hits = append(hits, rowHit{cursor: index})
 		if index == 0 {
 			lines = append(lines, prefix+"All sources")
 			continue
@@ -157,5 +163,5 @@ func (m *app) sourcePickerLines(width int) []string {
 	if m.repoReady && m.repoResult.Root != "" && len(m.repoResult.Targets) == 0 {
 		lines = append(lines, wrapped("Cwd: "+m.repoNote, width)...)
 	}
-	return lines
+	return lines, padHits(hits, len(lines))
 }

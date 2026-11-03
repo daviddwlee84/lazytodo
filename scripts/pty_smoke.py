@@ -47,6 +47,11 @@ item = {{"id":991,"number":9,"title":"Slow source fixture","body":"Fictional pro
 print("HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n" + json.dumps([item]))
 ''')
     fake.chmod(0o700)
+    # Fake native clipboard: drag-copy must never touch the real clipboard.
+    clip = root / "clipboard.txt"
+    pbcopy = tools / "pbcopy"
+    pbcopy.write_text(f"#!{sys.executable}\nimport sys\nopen({str(clip)!r}, 'w').write(sys.stdin.read())\n")
+    pbcopy.chmod(0o700)
     config = root / "config.toml"
     config.write_text('''refresh_interval = "0s"
 repo_context = false
@@ -151,6 +156,40 @@ query = "state:open"
         wait_text("Sources")
         send(b"\x1b")
 
+        # Mouse capture is on by default (cell motion + SGR coordinates).
+        assert b"\x1b[?1002h" in transcript and b"\x1b[?1006h" in transcript, "mouse capture not requested"
+        # SGR coordinates are 1-based: list row 2 is cell (6, 7).
+        send(b"\x1b[<0;6;7M\x1b[<0;6;7m")
+        send(b"\x1b[<65;6;7M\x1b[<64;6;7M")  # wheel down/up over the list
+        send(b"\x1b[<65;70;8M")  # wheel over the preview
+        # Drag in the preview (inner x starts at 53 1-based) copies on release.
+        start = len(transcript)
+        send(b"\x1b[<0;54;5M\x1b[<32;64;6M\x1b[<0;64;6m")
+        # Linux CI has no native clipboard helper; the OSC 52-only notice also says Copied.
+        wait_text("Copied", after=start)
+        assert b"\x1b]52;c;" in transcript[start:], "drag-copy did not emit OSC 52"
+        if sys.platform == "darwin":
+            deadline = time.monotonic()+3
+            while not (clip.exists() and clip.read_text().strip()):
+                assert time.monotonic()<deadline, "native clipboard helper not invoked"
+                pump(0.05)
+        send(b"\x1b")  # clear selection
+        send(b"\x1b")  # list focus
+        # Footer hint click opens Views ("v views" sits after "tab pane  / search  ").
+        start = len(transcript)
+        footer = 30
+        send(f"\x1b[<0;{len('↑↓/jk move  tab pane  / search  ')+2};{footer}M".encode())
+        wait_text("Views", after=start)
+        send(b"\x1b")
+        # M releases capture for native selection, M again restores it.
+        start = len(transcript)
+        send(b"M")
+        wait_text("Mouse capture off", after=start)
+        assert b"\x1b[?1002l" in transcript[start:], "M did not release mouse capture"
+        send(b"M")
+        assert b"\x1b[?1002h" in transcript[start:], "M did not restore mouse capture"
+        assert process.poll() is None, "mouse input crashed the TUI"
+
         # Begin a slow refresh; select/pin while provider I/O remains pending.
         started.unlink(missing_ok=True)
         hold.write_text("hold provider until input succeeds")
@@ -187,7 +226,8 @@ query = "state:open"
         restored = termios.tcgetattr(slave)
         assert terminal_modes(restored) == terminal_modes(original), "terminal modes not restored"
         assert b"\x1b[?1049l" in transcript, "alternate screen not restored"
-        print(f"PTY OK: search/input/paste, views/help/sources, pin during slow fetch ({responsive:.3f}s), failure retention, resize, quit cleanup; first observed frame {first_frame:.3f}s")
+        assert transcript.rfind(b"\x1b[?1002l") > transcript.rfind(b"\x1b[?1002h"), "mouse capture not released on exit"
+        print(f"PTY OK: search/input/paste, views/help/sources, mouse click/wheel/footer/drag-copy/M toggle, pin during slow fetch ({responsive:.3f}s), failure retention, resize, quit cleanup; first observed frame {first_frame:.3f}s")
 
         # Raw Ctrl+C must exit cleanly and restore terminal ownership too.
         transcript.clear()

@@ -230,7 +230,10 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 		return err
 	}
 	defer tx.Rollback()
-	// Retire disabled, removed or reconfigured targets only during an explicit write.
+	// Retire reconfigured targets only during an explicit write. Sources absent from
+	// this configuration may belong to another --config sharing the cache, or to a
+	// newer config a long-running TUI has not loaded; reads filter them out, so keep
+	// their last-good rows unless this complete snapshot claims the same identity.
 	valid := map[string]string{}
 	for _, s := range active {
 		valid[s.ID] = s.Fingerprint()
@@ -246,7 +249,7 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 			rows.Close()
 			return err
 		}
-		if valid[id] != fp {
+		if want, ok := valid[id]; ok && want != fp {
 			obsolete = append(obsolete, id)
 		}
 	}
@@ -255,14 +258,18 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 	if err != nil {
 		return err
 	}
+	retire := func(id string) error {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM labels WHERE ref IN (SELECT ref FROM items WHERE source_id=?)", id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM items WHERE source_id=?", id); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, "DELETE FROM sources WHERE id=?", id)
+		return err
+	}
 	for _, id := range append(obsolete, s.ID) {
-		if _, err = tx.ExecContext(ctx, "DELETE FROM labels WHERE ref IN (SELECT ref FROM items WHERE source_id=?)", id); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, "DELETE FROM items WHERE source_id=?", id); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, "DELETE FROM sources WHERE id=?", id); err != nil {
+		if err = retire(id); err != nil {
 			return err
 		}
 	}
@@ -273,7 +280,15 @@ func WriteSnapshot(ctx context.Context, path string, s config.Source, snap model
 		var other string
 		err = tx.QueryRowContext(ctx, "SELECT source_id FROM items WHERE ref=?", i.Ref).Scan(&other)
 		if err == nil {
-			return fmt.Errorf("canonical identity overlaps another configured source (%s)", other)
+			if _, configured := valid[other]; configured {
+				return fmt.Errorf("canonical identity overlaps another configured source (%s)", other)
+			}
+			// An unconfigured alias (renamed, disabled or another config's source)
+			// for the same native identity yields to this complete observation.
+			if err = retire(other); err != nil {
+				return err
+			}
+			err = sql.ErrNoRows
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err

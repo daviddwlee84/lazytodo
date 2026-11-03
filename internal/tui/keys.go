@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"lazytodo/internal/model"
 )
 
 type keyScope uint16
@@ -64,6 +65,9 @@ var bindings = []binding{
 	{"inspect", []string{"enter"}, "Enter", "inspect", navigation, false, func(m *app) bool { _, ok := m.selected(); return ok }},
 	{"pin", []string{"p"}, "p", "pin", navigation, true, func(m *app) bool { i, ok := m.selected(); return ok && m.pins[i.Ref] == 0 }},
 	{"open", []string{"o"}, "o", "open URL", navigation, true, func(m *app) bool { i, ok := m.selected(); return ok && i.URL != "" && m.opens[i.Ref] == 0 }},
+	{"copy-url", []string{"y"}, "y", "copy URL", navigation, false, func(m *app) bool { i, ok := m.selected(); return ok && i.URL != "" }},
+	{"copy-body", []string{"Y"}, "Y", "copy body (markdown)", navigation, false, func(m *app) bool { i, ok := m.selected(); return ok && i.Body != "" }},
+	{"mouse", []string{"M"}, "M", "mouse capture on/off", navigation, false, nil},
 	{"refresh", []string{"r"}, "r", "refresh", navigation, true, func(m *app) bool {
 		return !m.fetching && !m.current().loading && !m.editingConfig && !m.editorRequested && m.configError == ""
 	}},
@@ -148,7 +152,9 @@ func (m *app) action(id string) tea.Cmd {
 			return m.query(true)
 		}
 	case "back":
-		if m.focus == previewPane {
+		if m.sel.active || m.sel.dragging {
+			m.sel = previewSelection{}
+		} else if m.focus == previewPane {
 			m.focus = listPane
 		} else if m.current().filter != "" {
 			m.current().filter = ""
@@ -199,6 +205,21 @@ func (m *app) action(id string) tea.Cmd {
 		return m.pin()
 	case "open":
 		return m.open()
+	case "copy-url":
+		if item, ok := m.selected(); ok {
+			return m.copyText(oneLine(item.URL), "URL")
+		}
+	case "copy-body":
+		if item, ok := m.selected(); ok {
+			return m.copyText(strings.TrimSpace(model.Plain(item.Body)), "body")
+		}
+	case "mouse":
+		m.mouse = !m.mouse
+		m.sel = previewSelection{}
+		m.notice = "Mouse capture on: click, wheel, drag in preview copies; M turns it off."
+		if !m.mouse {
+			m.notice = "Mouse capture off — terminal selection works; M re-enables."
+		}
 	case "refresh":
 		m.notice = ""
 		return tea.Batch(m.query(false), m.fetchSource(m.scopeSource, false))
@@ -246,43 +267,63 @@ func (m *app) hints(scope keyScope, footer bool) []string {
 		if !b.applies(m, scope) || (footer && !b.footer) {
 			continue
 		}
-		label := b.label
-		if b.id == "down" {
-			if footer {
-				label = "move"
-			}
-			if m.focus == previewPane && scope == navigation {
-				label = "scroll preview"
-			}
-		}
-		hint := b.hint
-		if b.id == "focus" && footer {
-			hint, label = b.keys[0], "pane"
-		}
-		if b.id == "down" && footer {
-			hint = "↑↓/jk"
-		}
-		result = append(result, hint+" "+label)
+		result = append(result, m.hintText(b, scope, footer))
 	}
 	return result
 }
-func (m *app) footer() string {
-	parts := m.hints(m.scope(), true)
-	text := strings.Join(parts, "  ")
-	if ansi.StringWidth(text) <= m.width {
-		return text
+func (m *app) hintText(b binding, scope keyScope, footer bool) string {
+	label := b.label
+	if b.id == "down" {
+		if footer {
+			label = "move"
+		}
+		if m.focus == previewPane && scope == navigation {
+			label = "scroll preview"
+		}
+	}
+	hint := b.hint
+	if b.id == "focus" && footer {
+		hint, label = b.keys[0], "pane"
+	}
+	if b.id == "down" && footer {
+		hint = "↑↓/jk"
+	}
+	return hint + " " + label
+}
+
+// footerSegment keeps the binding behind each visible hint so a click runs it.
+type footerSegment struct{ id, text string }
+
+const footerSeparator = "  "
+
+func (m *app) footerSegments() []footerSegment {
+	scope := m.scope()
+	var all []footerSegment
+	for _, b := range bindings {
+		if !b.applies(m, scope) || !b.footer {
+			continue
+		}
+		all = append(all, footerSegment{b.id, m.hintText(b, scope, true)})
+	}
+	if ansi.StringWidth(joinSegments(all)) <= m.width || scope != navigation {
+		return all
 	}
 	// Preserve an escape hatch in narrow terminals, still using the same registry.
-	if m.scope() == navigation {
-		var essential []string
-		for _, b := range bindings {
-			core := b.id == "search" || b.id == "help" || b.id == "quit"
-			action := m.width >= 60 && (b.id == "sources" || b.id == "views" || b.id == "pin" || b.id == "tags")
-			if b.applies(m, navigation) && (core || action) {
-				essential = append(essential, b.hint+" "+b.label)
-			}
+	var essential []footerSegment
+	for _, b := range bindings {
+		core := b.id == "search" || b.id == "help" || b.id == "quit"
+		action := m.width >= 60 && (b.id == "sources" || b.id == "views" || b.id == "pin" || b.id == "tags")
+		if b.applies(m, navigation) && (core || action) {
+			essential = append(essential, footerSegment{b.id, b.hint + " " + b.label})
 		}
-		return strings.Join(essential, "  ")
 	}
-	return text
+	return essential
 }
+func joinSegments(segments []footerSegment) string {
+	parts := make([]string, len(segments))
+	for i, s := range segments {
+		parts[i] = s.text
+	}
+	return strings.Join(parts, footerSeparator)
+}
+func (m *app) footer() string { return joinSegments(m.footerSegments()) }

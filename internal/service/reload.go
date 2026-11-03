@@ -9,6 +9,9 @@ func (s *Service) ReloadConfig() (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.MouseOverride != nil {
+		cfg.Mouse = *s.MouseOverride
+	}
 	next := *s
 	next.Config = cfg
 	return &next, nil

@@ -274,3 +274,22 @@ func BenchmarkQuery10k(b *testing.B) {
 	}
 }
 func fmtID(n int) string { return strconv.Itoa(n) }
+
+// A failed refresh changes attempt/retry/error metadata but no cached row, so paging continues.
+func TestFailedRefreshKeepsPagingRevision(t *testing.T) {
+	s, f := setup(t)
+	fetchOK(t, s)
+	ctx := context.Background()
+	r, e := s.Query(ctx, QueryRequest{Limit: 1})
+	if e != nil {
+		t.Fatal(e)
+	}
+	f.errs["a"] = errors.New("fictional provider outage")
+	if _, e = s.Fetch(ctx, "", false); e == nil {
+		t.Fatal("failure not reported")
+	}
+	next, e := s.Query(ctx, QueryRequest{Limit: 1, Offset: 1, Revision: r.Revision})
+	if e != nil || next.Revision != r.Revision || len(next.Items) != 1 {
+		t.Fatal(next, e)
+	}
+}

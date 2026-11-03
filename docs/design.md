@@ -41,6 +41,9 @@ Labels remain native facts. UI chips may reuse a validated six-digit RGB color w
 - A complete source response means all requested outer and required nested pages were read, within the configured scope and credentials. It is not a global inventory or a transactionally consistent remote instant.
 - Fetch obtains an OS advisory lock, reads at most two sources concurrently, and commits each snapshot in a short SQLite transaction. Readers use a single read transaction for item rows and their source revisions.
 - Partial response, malformed data, pagination limit, GraphQL errors, timeout or cancellation cannot replace last-good data.
+- A write retires rows only for a configured source whose target fingerprint changed. Rows of sources absent from the writer's configuration (another `--config` sharing the cache, or a newer config a running TUI has not loaded) are kept and filtered at read time, unless the committed snapshot claims the same canonical identities, in which case that unconfigured alias yields.
+- GitHub issues are paged oldest-first so items created during a fetch append instead of duplicating a page-boundary item. A deletion during a fetch can still shift a later item; see the backlog.
+- Paging revisions bind to observation identity (snapshot revision, observed time, count, completeness), not attempt/retry/error metadata, so a failed background refresh does not reset pagination.
 - A valid empty snapshot removes previous rows for that source. Absence means not observed in the current projection, not deleted/closed upstream. Pins remain in separate durable storage.
 - Source target fingerprints isolate configuration changes. A failed fetch for a changed target cannot relabel old-target rows as current.
 - Native fetch has a two-minute source deadline, 64 MiB total response/output budget and 10,000-request safety ceiling. Limit failures are explicit, not truncated success. No immediate blind retries; subsequent attempts honor source retry metadata and at least a one-minute failure backoff.
@@ -80,7 +83,11 @@ Static help/version/skill/config-example paths do not parse configuration or cre
 
 ## Terminal and trust boundaries
 
-The event loop owns state. I/O runs in effects with cancellation/generation guards. Refresh follows stable refs, text fields own printable keys, and overlays restore the underlying context. Views remember their query/page/selection/scroll. Main UI is list/preview with narrow-pane fallback; no mouse capture or required font.
+The event loop owns state. I/O runs in effects with cancellation/generation guards. Refresh follows stable refs, text fields own printable keys, and overlays restore the underlying context. Views remember their query/page/selection/scroll. Main UI is list/preview with narrow-pane fallback; no required font.
+
+Mouse capture (Bubble Tea cell motion: click, release, wheel, drag) is on by default and opt-out via `mouse = false`, `--mouse=false` or the session-only `M` toggle. Every mouse event resolves to an existing keyboard action, selection function or picker cursor, so availability and generation guards are shared; geometry and overlay hit maps come from the same helpers/loops that render the frame. Outward or persistent effects stay two-step: picker rows and buttons are focused by the first click and activated by a click on the focused target; Quit/Cancel are never click targets. The preview's drag selection is kept in content coordinates, copies displayed text on release through OSC 52 and, outside SSH, the native clipboard; nothing is sent elsewhere.
+
+Preview bodies are sanitized with `Plain` before markdown rendering. Renderer output is reduced to SGR styling only (no OSC 8 hyperlinks, cursor or string controls), and the rendered lines are cached per item, body, width and theme.
 
 Native CLIs receive fixed read requests, explicit hostname/scope and JSON variables on stdin, never a shell or interpolated GraphQL. Credentials remain with native tools. External content is sanitized for terminal controls. Only explicit `open` can launch the system browser, only HTTP(S) without userinfo; forge URL host must match origin authority.
 

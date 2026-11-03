@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/atotto/clipboard"
 	"lazytodo/internal/config"
 	"lazytodo/internal/model"
 	"lazytodo/internal/repoctx"
@@ -37,6 +38,11 @@ func Run(ctx context.Context, svc *service.Service) error {
 	m := newModel(ctx, svc, svc.Config)
 	m.configureRepoContext(svc)
 	m.configureSourceEditor(svc)
+	// OSC 52 reaches the terminal (including over SSH); locally also use the
+	// native clipboard because several terminals disable OSC 52 by default.
+	if os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_TTY") == "" {
+		m.clipboardWrite = clipboard.WriteAll
+	}
 	defer m.cancel()
 	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
 	m.cancel()
@@ -130,6 +136,10 @@ type app struct {
 	tagLabels                              []model.Label
 	tagCursor                              int
 	tagTitle, tagSourceID                  string
+	mouse                                  bool
+	sel                                    previewSelection
+	clipboardWrite                         func(string) error
+	markdown                               markdownCache
 }
 
 func newModel(ctx context.Context, b backend, c config.Config) *app {
@@ -143,7 +153,7 @@ func newModel(ctx context.Context, b backend, c config.Config) *app {
 	_, noColor := os.LookupEnv("NO_COLOR")
 	m := &app{ctx: owned, cancel: cancel, backend: b, config: c,
 		views: []viewState{{name: "All"}, {name: "Pinned", base: "pinned:true"}},
-		input: input, width: 80, height: 24, dark: true,
+		input: input, width: 80, height: 24, dark: true, mouse: c.Mouse,
 		color: c.Color != "never" && (c.Color == "always" || !noColor),
 		pins:  make(map[string]uint64), opens: make(map[string]uint64),
 	}
@@ -348,6 +358,7 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
 		m.input.SetWidth(max(1, m.width-4))
+		m.sel = previewSelection{}
 		m.clamp()
 	case tea.BackgroundColorMsg:
 		m.dark = msg.IsDark()
@@ -390,6 +401,7 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if oldRef != v.selectedRef {
 			v.preview = 0
+			m.sel = previewSelection{}
 		}
 		m.clamp()
 	case sourcesMsg:
@@ -470,6 +482,12 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyPressMsg:
 		return m, m.key(msg)
+	case tea.MouseMsg:
+		return m, m.handleMouse(msg)
+	case clipboardMsg:
+		if msg.err != nil && msg.generation == m.operationGeneration {
+			m.notice = "Copied via terminal (OSC 52) only; the native clipboard was unavailable."
+		}
 	case tea.PasteMsg:
 		if m.searching {
 			return m, m.updateInput(tea.PasteMsg{Content: model.Plain(msg.Content)})
@@ -503,6 +521,7 @@ func (m *app) selectIndex(index int) {
 	}
 	if oldRef != v.selectedRef {
 		v.preview = 0
+		m.sel = previewSelection{}
 		m.detailGeneration++
 		m.detailPending = false
 	}
@@ -513,6 +532,7 @@ func (m *app) switchView(index int) tea.Cmd {
 		return nil
 	}
 	m.active, m.overlay, m.gPending = index, noOverlay, false
+	m.sel = previewSelection{}
 	m.input.SetValue(m.current().filter)
 	return m.query(false)
 }

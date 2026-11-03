@@ -28,4 +28,8 @@ Apple: research macOS EventKit bridge and actual Reminders permissions/packaging
 
 Only an explicitly selected, minimal store/export reader. Preserve schema_version/store_id/item ID and native state. Do not import its complete private context via overview just to render task titles; do not change its schema or treat roles as shell APIs.
 
+## GitHub / GitLab refresh cost and paging drift
+
+Review of 2026-11-04: every refresh re-reads complete history; GitHub `/issues` also returns pull requests (filtered client-side), with no `since=`. A repository with tens of thousands of issues+PRs needs hundreds of requests per refresh and may never finish within the two-minute/64 MiB per-source budget, leaving the source unknown with a generic deadline error. GitHub paging now uses `sort=created&direction=asc`, so new issues append rather than duplicating a boundary item (which failed snapshot validation); a deletion/transfer during a fetch can still shift one item past a page boundary and be skipped while the snapshot is marked complete. Entry criteria for an incremental design: `since=`-style deltas with periodic full reconciliation (deletions are invisible to deltas), a PR-free read path (search API or GraphQL `issues` connection with cursors), and timeout errors that name the source and limit. Indexed from [TODO](../TODO.md) "Incremental native fetch".
+
 Every adapter needs fixtures for pagination, unknown vs empty fields, stale preservation, and source-safe reads before being advertised. Indexed from [TODO](../TODO.md).

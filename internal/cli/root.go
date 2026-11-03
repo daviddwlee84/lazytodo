@@ -45,13 +45,14 @@ func argsExactly(n int) cobra.PositionalArgs {
 
 func NewCommand() *cobra.Command {
 	var configPath, color, interval string
-	var jsonOutput bool
+	var jsonOutput, mouse bool
 	root := &cobra.Command{Use: "lazytodo", Short: "A local-first, read-only inbox across work trackers", SilenceErrors: true, SilenceUsage: true, Args: argsExactly(0)}
 	root.SetFlagErrorFunc(func(c *cobra.Command, e error) error { return service.Fail("usage", e.Error()) })
 	root.PersistentFlags().StringVar(&configPath, "config", "", "Configuration file (default: XDG_CONFIG_HOME/lazytodo/config.toml)")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Versioned JSON output; never prompt")
 	root.PersistentFlags().StringVar(&color, "color", "auto", "Terminal color: auto, always, never")
 	root.PersistentFlags().StringVar(&interval, "refresh-interval", "5m", "TUI refresh interval (0s disables automatic fetch)")
+	root.PersistentFlags().BoolVar(&mouse, "mouse", true, "TUI mouse capture: click, wheel and drag-to-copy (false keeps native terminal selection)")
 	initialize := func(c *cobra.Command) (*service.Service, error) {
 		paths, e := config.ResolvePaths()
 		if e != nil {
@@ -75,6 +76,9 @@ func NewCommand() *cobra.Command {
 		}
 		svc := service.New(cfg, paths, source.New())
 		svc.ColorOverride, svc.IntervalOverride = cp, ip
+		if c.Flags().Changed("mouse") {
+			svc.Config.Mouse, svc.MouseOverride = mouse, &mouse
+		}
 		return svc, nil
 	}
 	terminal := func(c *cobra.Command) bool {

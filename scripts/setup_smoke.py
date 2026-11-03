@@ -117,6 +117,10 @@ else:
         session.send(b"/jkhql/?")
         assert session.proc.poll() is None,"filter key invoked navigation"
         session.send(b"\x1b")
+        # Mouse capture is requested; wheel moves the cursor without selecting.
+        assert b"\x1b[?1002h" in session.output and b"\x1b[?1006h" in session.output, "setup mouse capture not requested"
+        session.send(b"\x1b[<65;5;10M\x1b[<64;5;10M")
+        assert session.proc.poll() is None, "wheel input crashed setup"
         session.send(b" ")
         session.send(b"\r")
         session.wait("Review")
@@ -131,6 +135,7 @@ else:
         session.send(b"\r")
         session.finish()
         assert config.is_file()
+        assert session.output.rfind(b"\x1b[?1002l") > session.output.rfind(b"\x1b[?1002h"), "setup mouse capture not released"
     finally:
         session.close()
 
@@ -143,7 +148,7 @@ else:
     calls = log.read_text()
     assert "issues?" not in calls
     assert "gitlab.qa.example" in calls, "edited host was not used for discovery"
-    print("Setup PTY OK: explicit discovery, recent-first selection, partial auth failure guidance, filter input, safe Review/Back, confirmed Save, no issue fetch")
+    print("Setup PTY OK: explicit discovery, mouse capture/wheel/release, recent-first selection, partial auth failure guidance, filter input, safe Review/Back, confirmed Save, no issue fetch")
 
     # No tools: show actionable setup/manual options and allow cancel without writes.
     no_tools = dict(env)

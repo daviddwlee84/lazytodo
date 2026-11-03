@@ -185,13 +185,18 @@ func (m *app) chooseTag() tea.Cmd {
 	return m.query(true)
 }
 func (m *app) tagLines(width int) []string {
+	lines, _ := m.tagRows(width)
+	return lines
+}
+func (m *app) tagRows(width int) ([]string, []rowHit) {
 	lines := wrapped("Labels on "+m.tagTitle+" · Enter adds an exact label: filter", width)
 	if m.tagLabels == nil {
-		return append(lines, "Labels are unknown or unsupported by this source.")
+		return append(lines, "Labels are unknown or unsupported by this source."), nil
 	}
 	if len(m.tagLabels) == 0 {
-		return append(lines, "No labels on this item.")
+		return append(lines, "No labels on this item."), nil
 	}
+	hits := padHits(nil, len(lines))
 	capacity := max(1, m.contentHeight()-len(lines)-3)
 	start := min(max(0, m.tagCursor-capacity+1), max(0, len(m.tagLabels)-capacity))
 	for n := start; n < len(m.tagLabels) && n < start+capacity; n++ {
@@ -206,6 +211,8 @@ func (m *app) tagLines(width int) []string {
 			note = "  priority label"
 		}
 		lines = append(lines, fit(prefix+m.labelChip(l, priority)+note, width))
+		hits = append(hits, rowHit{cursor: n})
 	}
-	return append(lines, "", "Priority labels are display hints, not cross-source ranks.")
+	lines = append(lines, "", "Priority labels are display hints, not cross-source ranks.")
+	return lines, padHits(hits, len(lines))
 }

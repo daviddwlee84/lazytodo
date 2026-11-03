@@ -71,3 +71,17 @@ This supports the small substring-search baseline, not a claim about 100k-item d
 - Linux runtime/PTY and CI execution: a Linux binary was cross-built; the macOS/Linux CI matrix is authored but has not run on a remote service.
 - Real browser opening or native authentication flows; no external browser was launched by the verification suite.
 - Linear, native Beads/td, Super Productivity, Google Tasks, Reminders, personal-ops exchange or translation: these remain backlog, not tested integrations.
+
+## Mouse, preview copy and markdown follow-up
+
+Verified **2026-11-04**, macOS Darwin/arm64. `go test ./...`, `go test -race ./...`, `go vet ./...` and all PTY smoke scripts passed.
+
+- `scripts/pty_smoke.py` now sends SGR mouse input in a real PTY: it asserts the cell-motion/SGR modes (`?1002h`, `?1006h`) are requested, then sends a list click, wheel over list and preview, a preview drag (an OSC 52 write appears after release; on macOS a fake `pbcopy` placed first on `PATH` receives the text, so the real clipboard is never touched), a footer-hint click that opens Views, and `M` toggling capture off/on. On exit it asserts capture is released.
+- `scripts/setup_smoke.py` asserts the wizard requests and releases mouse capture and survives wheel input. Wizard checkbox/button clicks are covered by unit tests rather than the PTY, because locating rows in incremental renderer output would be brittle.
+- Unit tests cover row select and inspect on a second click, wheel targeting, picker/footer/header clicks, quit never being clickable, the tiny layout and disabled capture, search acceptance on an outside click, drag text extraction/auto-scroll/Esc clearing, two-click repo registration and wizard Save, keyboard `y`/`Y`, and SGR-only renderer output, including a hostile OSC 8/CSI/DCS/C1 body and render caching.
+- A manual tmux 3.6a session (fictional snapshot, isolated HOME/XDG) confirmed rendered headings, tables, lists and code, the preview position title, reverse-video drag highlight and the copy notice. tmux measures the fixture's ZWJ emoji row differently from Bubble Tea's grapheme widths and shifted that row's border; this is a pre-existing emulator width difference, not new behavior.
+
+Not verified here: iTerm2/Terminal.app/Linux terminal emulators driven by a real pointer, OSC 52 acceptance by a particular terminal or by tmux `set-clipboard`, and Linux native clipboard helpers (xclip/xsel/wl-copy). Linux CI is expected to exercise the OSC 52-only path.
+
+Backend fixes in the same change are covered by new tests: shared-cache writes from two configurations keep each other's rows; a renamed alias yields to the same identity while configured overlaps still fail; a failed refresh keeps the paging revision; case-variant duplicate forge targets are rejected. The GitHub request now includes `sort=created&direction=asc` (fixture path updated).
+
