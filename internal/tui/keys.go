@@ -41,6 +41,7 @@ var bindings = []binding{
 	{"top", []string{"home", "gg"}, "Home/gg", "first / scroll top", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
 	{"bottom", []string{"end", "G"}, "End/G", "last / scroll bottom", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
 	{"prefix", []string{"g"}, "g", "begin gg (Esc cancels)", navigation | helpKeys | viewKeys | sourceKeys | tagKeys, false, nil},
+	{"all-sources", []string{"esc"}, "Esc", "all sources", navigation, true, func(m *app) bool { return m.canLeaveScope() }},
 	{"back", []string{"esc"}, "Esc", "back / clear search", navigation, false, nil},
 	{"close", []string{"esc", "q", "?"}, "Esc/q/?", "close overlay", helpKeys | sourceKeys | tagKeys, true, nil},
 	{"close", []string{"esc", "q", "v"}, "Esc/q/v", "close picker", viewKeys, true, nil},
@@ -75,6 +76,12 @@ var bindings = []binding{
 	{"previous-page", []string{"ctrl+p"}, "Ctrl+P", "previous page", navigation, true, func(m *app) bool { v := m.current(); return !v.loading && v.offset > 0 }},
 	{"help", []string{"?"}, "?", "help", navigation, true, nil},
 	{"quit", []string{"q"}, "q", "quit", navigation, true, nil},
+}
+
+// canLeaveScope is the outermost Esc step: selection, preview focus and the
+// search filter unwind first, then a source scope returns to All sources.
+func (m *app) canLeaveScope() bool {
+	return m.scopeSource != "" && m.focus == listPane && m.current().filter == "" && !m.sel.active && !m.sel.dragging
 }
 
 func (m *app) scope() keyScope {
@@ -161,6 +168,9 @@ func (m *app) action(id string) tea.Cmd {
 			m.input.SetValue("")
 			return m.query(true)
 		}
+	case "all-sources":
+		m.notice = "All sources; s or c returns to a repository."
+		return m.changeScope("", false)
 	case "focus":
 		m.focus = 1 - m.focus
 	case "left":
@@ -311,7 +321,7 @@ func (m *app) footerSegments() []footerSegment {
 	// Preserve an escape hatch in narrow terminals, still using the same registry.
 	var essential []footerSegment
 	for _, b := range bindings {
-		core := b.id == "search" || b.id == "help" || b.id == "quit"
+		core := b.id == "search" || b.id == "help" || b.id == "quit" || b.id == "all-sources"
 		action := m.width >= 60 && (b.id == "sources" || b.id == "views" || b.id == "pin" || b.id == "tags")
 		if b.applies(m, navigation) && (core || action) {
 			essential = append(essential, footerSegment{b.id, b.hint + " " + b.label})

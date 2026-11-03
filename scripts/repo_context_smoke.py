@@ -104,10 +104,15 @@ print("HTTP/2.0 200 OK\\r\\n\\r\\n"+json.dumps([issue(1,"open","Current repo ope
         session.wait("All sources")
         session.send(b"c")
         session.wait("(cwd)")
+        session.wait("Esc all sources")
+        # Esc is the outermost step out of the cwd scope back to every source.
+        mark=len(session.output)
+        session.send(b"\x1b")
+        session.wait("All sources;",after=mark)
         session.finish()
     finally:session.close()
     assert Path(env["API_LOG"]).read_text()==before,"cache-only context detection performed API calls"
-    print("Cwd PTY OK: nested checkout, configured repo prioritization, Open default, independent All/source switching, no detection network")
+    print("Cwd PTY OK: nested checkout, configured repo prioritization, Open default, independent All/source switching, Esc leaves cwd scope, no detection network")
 
     # Missing source offers Ignore by default; neither config nor cache is written.
     env,config=scenario("ignore")

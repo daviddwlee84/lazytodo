@@ -102,9 +102,9 @@ GitHub excludes PRs. GitLab needs the Work Items GraphQL fields used by the adap
 | `t`, then Enter | Browse selected item's tags and add an exact label filter |
 | `c` | Focus/revisit the current cwd repository |
 | Ctrl+N / Ctrl+P | Next/previous result page |
-| `?`, Esc, `q` | Help, back/clear, quit |
+| `?`, Esc, `q` | Help, back (selection → preview → search → All sources), quit |
 
-The TUI starts in **Open** (closed items remain available under All). Views and source scope are independent: choose a repo with `s`, then use `v` to see its Open/All/Pinned items. `s` → All sources returns to cross-repo browsing. Each source/view keeps its filter and selection. Rows use readable repository names and issue numbers rather than truncated internal IDs; the footer summarizes freshness/errors, with details in `s`.
+The TUI starts in **Open** (closed items remain available under All). Views and source scope are independent: choose a repo with `s`, then use `v` to see its Open/All/Pinned items. `s` → All sources, Esc at the top level, or a click on the header scope returns to cross-repo browsing; an empty repository says so and how to widen it, instead of suggesting a search you never typed. Each source/view keeps its filter and selection. Rows use readable repository names and issue numbers rather than truncated internal IDs; the footer summarizes freshness/errors, with details in `s`.
 
 Wide terminals show list + preview; narrow terminals show the focused pane. No mandatory icons or Vim insert mode. The preview renders issue markdown (headings, emphasis, lists, tables, code); single newlines stay line breaks as on GitHub/GitLab, links are shown as text plus URL and are never clickable terminal hyperlinks.
 

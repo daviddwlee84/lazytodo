@@ -226,8 +226,27 @@ func (m *app) listLines(width int) []string {
 		if v.err != "" {
 			return wrapped("Could not load items.\n"+v.err+"\nRefresh to retry.", width)
 		}
-		if v.query() != "" {
-			return wrapped("No items match this view.\nClear the search or choose another view.", width)
+		if v.filter != "" {
+			return wrapped("No items match this search.\nEsc clears the search, or choose another view with v.", width)
+		}
+		if m.scopeSource != "" || v.base != "" {
+			// An empty view or repository is not a search result: say where you are
+			// and how to widen it.
+			where := "No items in the " + oneLine(v.name) + " view"
+			if m.scopeSource != "" {
+				where += " for " + oneLine(m.scopeName())
+			}
+			lines := []string{where + "."}
+			if m.scopeSource != "" {
+				if st := m.sourceStatus(m.scopeSource); st.ObservedAt == nil || !st.Complete {
+					lines = append(lines, "This source has no complete snapshot yet; r fetches it.")
+				}
+				lines = append(lines, "Esc (or s → All sources) returns to every source.")
+			}
+			if v.base != "" {
+				lines = append(lines, "v switches views; All includes closed items.")
+			}
+			return wrapped(strings.Join(lines, "\n"), width)
 		}
 		complete := len(m.sources) > 0
 		for _, source := range m.sources {
