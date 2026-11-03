@@ -120,6 +120,8 @@ func sourceID(s Source) string {
 		prefix = "gl"
 	case "linear":
 		prefix = "ln"
+	case "super-productivity":
+		prefix = "sp"
 	}
 	return prefix + "-" + slug + "-" + model.Digest(SourceKey(s))[:8]
 }

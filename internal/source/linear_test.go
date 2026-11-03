@@ -213,13 +213,13 @@ func TestLinearTokenAndConfigGuards(t *testing.T) {
 func TestHTTPBudgetsAndDefaultRedirectRefusal(t *testing.T) {
 	var e *FetchError
 	s := &fetchState{pages: maxPages}
-	if _, _, _, err := s.post(context.Background(), linearEndpoint, http.Header{}, nil); !errors.As(err, &e) || e.Code != "page_limit" {
+	if _, _, _, err := s.request(context.Background(), http.MethodPost, linearEndpoint, http.Header{}, nil); !errors.As(err, &e) || e.Code != "page_limit" {
 		t.Fatalf("missing page limit: %v", err)
 	}
 	s = &fetchState{bytes: maxBytes - 4, http: httpFunc(func(*http.Request) (*http.Response, error) {
 		return lnResponse(200, "0123456789"), nil
 	})}
-	if _, _, _, err := s.post(context.Background(), linearEndpoint, http.Header{}, nil); !errors.As(err, &e) || e.Code != "size_limit" {
+	if _, _, _, err := s.request(context.Background(), http.MethodPost, linearEndpoint, http.Header{}, nil); !errors.As(err, &e) || e.Code != "size_limit" {
 		t.Fatalf("missing size limit: %v", err)
 	}
 	followed := false
@@ -230,7 +230,7 @@ func TestHTTPBudgetsAndDefaultRedirectRefusal(t *testing.T) {
 	}))
 	defer origin.Close()
 	s = &fetchState{}
-	_, _, status, err := s.post(context.Background(), origin.URL, http.Header{"Authorization": {fakeLinearToken}}, nil)
+	_, _, status, err := s.request(context.Background(), http.MethodPost, origin.URL, http.Header{"Authorization": {fakeLinearToken}}, nil)
 	if err != nil || status != http.StatusFound || followed {
 		t.Fatalf("default client followed a redirect: status=%d err=%v followed=%v", status, err, followed)
 	}

@@ -1,6 +1,6 @@
 # Sources and compatibility
 
-Normal fetch contacts configured sources only. Run bare `sources --json` for cached status, not a live probe. Explicit `init` or `sources discover` additionally reads account/repository metadata from the user-selected host, without fetching task content. Run `fetch` explicitly or allow TUI's configured interval after registration. Forge authentication stays with native tools; install/login separately for the exact hostname. Linear, which has no native CLI, reads a personal API key from an environment variable that the config names (`token_env`). No tokens belong in lazytodo TOML.
+Normal fetch contacts configured sources only. Run bare `sources --json` for cached status, not a live probe. Explicit `init` or `sources discover` additionally reads account/repository metadata from the user-selected host, without fetching task content. Run `fetch` explicitly or allow TUI's configured interval after registration. Forge authentication stays with native tools; install/login separately for the exact hostname. Linear and Super Productivity, which have no native CLI, read a token from an environment variable that the config names (`token_env`). No tokens belong in lazytodo TOML.
 
 ## Source initialization
 
@@ -68,6 +68,32 @@ Fixture tests follow Linear's published SDK schema (`packages/sdk/src/schema.gra
 
 References: [Linear GraphQL API](https://linear.app/developers/graphql), [rate limiting](https://linear.app/developers/rate-limiting), [assigning and delegating issues](https://linear.app/docs/assigning-issues).
 
+## Super Productivity
+
+```toml
+[[sources]]
+id = "super-productivity"
+kind = "super-productivity"
+token_env = "SP_API_TOKEN"   # the variable's NAME; export the Access Token in your shell
+```
+
+Desktop (Electron) app only. In the app, enable **Settings → Misc → Enable local REST API** (it is per computer and not synced) and copy the **Access Token** shown there into the named variable. `host` is fixed to `127.0.0.1:3876` (the app's non-configurable loopback port) and `scope` to `local`, the whole desktop profile. There is one source per configuration.
+
+Each fetch reads `GET /health` without a token, then `/projects`, `/tags` and `/tasks?source=all&includeDone=true` with `Authorization: Bearer <token>`. Requests bypass proxy settings and refuse redirects. The API does not paginate, so one response is the complete task list, still bounded by the shared 64 MiB budget.
+
+A closed app, a disabled API, a renderer that isn't ready, or a renderer timeout (503/504) reports `unavailable` and keeps the previous snapshot, never an empty list. A wrong token reports `authentication`. An app without these routes reports `unsupported_schema`.
+
+- **Coverage:** active, done and archived tasks, including tasks in archived projects. Subtasks are separate items with native type `Subtask`. Notes, repeat configs, counters and time tracking are not read.
+- **Identity:** `super-productivity` / `127.0.0.1:3876` / `tasks` / task ID. The display ref is the project title, or "Super Productivity" for tasks without a project, so text search matches project names.
+- **State:** `todo`, `done` or `won't do` (a done task whose `wontDoOn` equals `doneOn`). Done and won't-do map to closed.
+- **Labels:** tags with their native titles and colors. A tag ID that `/tags` does not return is kept as a label named by that ID, not dropped. Assignees and delegates stay unknown (the app is single-user). There is no web URL, so open-in-browser is unavailable for these items.
+
+The same key-hygiene advice as Linear applies: any process as your user that can read the variable can call the full read/write local API. Super Productivity's own docs note that the API does not authenticate itself to clients, so while the app is closed another local process could bind the port and receive the token.
+
+Fixture tests follow the app's source at v19.3.1 (`electron/local-rest-api.ts`, `local-rest-api-task-routes.service.ts`, plugin `Task`/`Tag`/`Project` types), not a running app.
+
+Reference: [Local REST API](https://github.com/super-productivity/super-productivity/wiki/3.01-API#3-local-rest-api).
+
 ## Canonical snapshot file
 
 ```toml
@@ -88,4 +114,4 @@ lazytodo never runs exporters, initializes/migrates/syncs trackers, or reads Bea
 
 ## Deferred
 
-[TODO](../TODO.md) and [adapter research](../backlog/source-adapters.md) cover Linear discovery, Beads/td, Super Productivity, Google Tasks, Reminders and selected personal-ops exchange. Translation is separately opt-in research, not a fetch/display side effect.
+[TODO](../TODO.md) and [adapter research](../backlog/source-adapters.md) cover Linear discovery, Beads/td, Google Tasks, Reminders and selected personal-ops exchange. Translation is separately opt-in research, not a fetch/display side effect.

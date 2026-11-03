@@ -215,10 +215,29 @@ func (c *Config) Validate(base string) error {
 				seen[name] = true
 			}
 		}
-		if s.Kind != "linear" && s.TokenEnv != "" {
-			return fmt.Errorf("source %s: token_env applies only to linear sources", s.ID)
+		if s.Kind != "linear" && s.Kind != "super-productivity" && s.TokenEnv != "" {
+			return fmt.Errorf("source %s: token_env applies only to linear and super-productivity sources", s.ID)
 		}
 		switch s.Kind {
+		case "super-productivity":
+			if s.Host == "" {
+				s.Host = "127.0.0.1:3876"
+			}
+			if s.Host != "127.0.0.1:3876" {
+				return fmt.Errorf("source %s: super-productivity host must be 127.0.0.1:3876 (the desktop app's fixed loopback API)", s.ID)
+			}
+			if s.Scope == "" {
+				s.Scope = "local"
+			}
+			if s.Scope != "local" {
+				return fmt.Errorf("source %s: super-productivity scope must be local (the whole desktop profile)", s.ID)
+			}
+			if !envName.MatchString(s.TokenEnv) {
+				return fmt.Errorf("source %s: super-productivity requires token_env naming an environment variable (e.g. SP_API_TOKEN)", s.ID)
+			}
+			if s.Path != "" {
+				return fmt.Errorf("source %s: path applies only to snapshots", s.ID)
+			}
 		case "linear":
 			if s.Host == "" {
 				s.Host = "linear.app"
@@ -268,7 +287,7 @@ func (c *Config) Validate(base string) error {
 				return fmt.Errorf("source %s: snapshot host is declared in its item origins", s.ID)
 			}
 		default:
-			return fmt.Errorf("source %s: supported kinds are github, gitlab, linear, snapshot", s.ID)
+			return fmt.Errorf("source %s: supported kinds are github, gitlab, linear, super-productivity, snapshot", s.ID)
 		}
 		if !s.Disabled {
 			// Case-insensitive for forges: Owner/Repo and owner/repo would claim
@@ -321,6 +340,12 @@ mouse = true # TUI click/wheel/drag-copy; false (or --mouse=false, or M) keeps n
 # scope = "workspace-url-key/TEAMKEY"
 # token_env = "LINEAR_API_KEY" # Name of the env var holding a personal API key; never the key itself.
 # disabled = true # Replace the scope, export the variable, then explicitly enable it.
+
+# [[sources]]
+# id = "super-productivity"
+# kind = "super-productivity" # Desktop app: Settings → Misc → Enable local REST API.
+# token_env = "SP_API_TOKEN" # Name of the env var holding the Access Token; never the token itself.
+# disabled = true
 
 # [[sources]]
 # id = "snapshot"

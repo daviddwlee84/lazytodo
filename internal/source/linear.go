@@ -240,7 +240,7 @@ func (s *fetchState) linearGraphQL(ctx context.Context, query string, variables 
 	header.Set("User-Agent", "lazytodo")
 	// Personal API keys are sent without a Bearer prefix.
 	header.Set("Authorization", s.token)
-	body, headers, status, err := s.post(ctx, linearEndpoint, header, payload)
+	body, headers, status, err := s.request(ctx, http.MethodPost, linearEndpoint, header, payload)
 	if err != nil {
 		return err
 	}
@@ -329,12 +329,12 @@ func linearRetry(e *FetchError, headers http.Header) {
 	}
 }
 
-// linearToken reads only the configured variable, and only during an explicit
+// envToken reads only the configured variable, and only during an explicit
 // fetch. Query/show/bare commands never reach this path.
-func linearToken(name string) (string, error) {
+func envToken(name, provider string) (string, error) {
 	token := strings.TrimSpace(os.Getenv(name))
 	if token == "" || strings.ContainsAny(token, "\r\n") {
-		return "", failure("auth_missing", "Linear API key is missing; export the variable named by token_env ("+name+")")
+		return "", failure("auth_missing", provider+" API token is missing; export the variable named by token_env ("+name+")")
 	}
 	return token, nil
 }

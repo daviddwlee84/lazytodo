@@ -71,7 +71,8 @@ This supports the small substring-search baseline, not a claim about 100k-item d
 - Linux runtime/PTY and CI execution: a Linux binary was cross-built; the macOS/Linux CI matrix is authored but has not run on a remote service.
 - Real browser opening or native authentication flows; no external browser was launched by the verification suite.
 - Live Linear workspace compatibility: the Linear reader is verified against fictional fixtures that follow the published SDK schema (2026-11-04), not an authenticated workspace.
-- Native Beads/td, Super Productivity, Google Tasks, Reminders, personal-ops exchange or translation: these remain backlog, not tested integrations.
+- A running Super Productivity desktop app: the reader is verified against fictional fixtures that follow the app's v19.3.1 source, not a live local REST API.
+- Native Beads/td, Google Tasks, Reminders, personal-ops exchange or translation: these remain backlog, not tested integrations.
 
 ## Mouse, preview copy and markdown follow-up
 

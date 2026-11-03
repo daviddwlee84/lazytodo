@@ -2,7 +2,7 @@
 
 **One inbox view, many authoritative sources.** A local-first Go CLI/TUI for browsing, searching and organizing work without replacing its tracker.
 
-首版：**GitHub Issues + GitLab project Work Items（含 labels）+ Linear team issues**，加上明確指定的 canonical snapshot 檔案。來源唯讀；本機 pins／views 可整理。不做任務寫回、agent 執行或 personal-ops 的決策流程。
+首版：**GitHub Issues + GitLab project Work Items（含 labels）+ Linear team issues + Super Productivity（桌面版本機 API）tasks**，加上明確指定的 canonical snapshot 檔案。來源唯讀；本機 pins／views 可整理。不做任務寫回、agent 執行或 personal-ops 的決策流程。
 
 ## Build and try
 
@@ -48,6 +48,11 @@ kind = "linear"
 scope = "workspace-url-key/ENG"
 token_env = "LINEAR_API_KEY" # variable name only; export the key in your shell
 
+[[sources]]
+id = "super-productivity"
+kind = "super-productivity" # desktop app: Settings → Misc → Enable local REST API
+token_env = "SP_API_TOKEN"
+
 [[views]]
 name = "Review"
 query = 'state:open label:"needs review"'
@@ -70,7 +75,7 @@ Editor precedence: `$VISUAL` → `$EDITOR` → `vi`. Quoted arguments are suppor
 
 **Inside the TUI:** press `s`, then `e` to edit the same selected TOML file (including source host/scope, enable/disable, addition/removal and view preferences). The current refresh is cancelled/quiesced first; Bubble Tea releases terminal ownership to the editor. Press Enter after reading the editor result to return. Valid settings reload immediately, keeping usable scope/view/selection state; removed or disabled scopes return to All sources. Invalid saved settings remain on disk, keep the previous cached view, and pause refresh until repaired through `s` → `e`. The last source can be removed and re-added from the same UI. Launch flags still outrank saved preferences. Editing with the standalone command requires restarting an already-open TUI; there is no filesystem watcher.
 
-**Already logged in?** Nothing else to import: lazytodo calls `gh api` / `glab api` with each source's explicit hostname, inheriting the native CLI's credentials, active account and environment. A github.com login does not authenticate another enterprise/GitLab host. No token is copied into lazytodo configuration. Linear has no native CLI: provide a personal API key, preferably read-only and team-restricted, under the variable named by `token_env`. Set it for lazytodo rather than exporting it globally, since every child process inherits it. Only fetch reads it ([details](docs/sources.md#linear)).
+**Already logged in?** Nothing else to import: lazytodo calls `gh api` / `glab api` with each source's explicit hostname, inheriting the native CLI's credentials, active account and environment. A github.com login does not authenticate another enterprise/GitLab host. No token is copied into lazytodo configuration. Linear has no native CLI: provide a personal API key, preferably read-only and team-restricted, under the variable named by `token_env`. Set it for lazytodo rather than exporting it globally, since every child process inherits it. Only fetch reads it ([details](docs/sources.md#linear)). Super Productivity works the same way with the desktop app's local REST API Access Token ([details](docs/sources.md#super-productivity)); while the app is closed the source shows as unavailable and keeps its cache.
 
 **Access is not scope.** Normal startup never discovers or adds repositories automatically. `init` explicitly lists owned/collaborator/organization-member GitHub repositories and GitLab membership projects, excluding archived or explicitly issue-disabled entries. These are not every readable public repository, watched repositories, or a list of issues assigned to you.
 
@@ -193,8 +198,8 @@ python3 scripts/tui_sources_tags_smoke.py bin/lazytodo
 python3 scripts/check_todo.py
 ```
 
-Tests use fictional data/fake provider CLIs and temporary state. No live GitHub/GitLab/Linear account was queried for the initial verification. A fixture-tested adapter is not a claim of compatibility with every self-hosted GitLab version.
+Tests use fictional data/fake provider CLIs and temporary state. No live GitHub/GitLab/Linear account or running Super Productivity app was queried for the initial verification. A fixture-tested adapter is not a claim of compatibility with every self-hosted GitLab version.
 
 ## Future work
 
-[TODO.md](TODO.md) is the priority/effort index; [backlog/](backlog/) holds research. Linear discovery/setup and Super Productivity are the next source candidates. Beads/td, Google Tasks, Reminders, personal-ops exchange, explicit intake/dispatch and optional [translate](https://github.com/daviddwlee84/translate) integration remain separate work. [Translation notes](backlog/translation.md) preserve the English-source/translated-view distinction.
+[TODO.md](TODO.md) is the priority/effort index; [backlog/](backlog/) holds research. Linear discovery/setup is the next source candidate. Beads/td, Google Tasks, Reminders, personal-ops exchange, explicit intake/dispatch and optional [translate](https://github.com/daviddwlee84/translate) integration remain separate work. [Translation notes](backlog/translation.md) preserve the English-source/translated-view distinction.

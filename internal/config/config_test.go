@@ -107,3 +107,22 @@ func TestLinearSourceValidation(t *testing.T) {
 		t.Fatal("linear TOML not loaded:", e)
 	}
 }
+
+func TestSuperProductivitySourceValidation(t *testing.T) {
+	c := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{{ID: "sp", Kind: "super-productivity", TokenEnv: "SP_API_TOKEN"}}}
+	if e := c.Validate(t.TempDir()); e != nil || c.Sources[0].Host != "127.0.0.1:3876" || c.Sources[0].Scope != "local" {
+		t.Fatal("valid super-productivity source rejected:", e, c.Sources[0])
+	}
+	for name, s := range map[string]Source{
+		"remote host":       {ID: "sp", Kind: "super-productivity", Host: "sp.example:3876", TokenEnv: "SP_API_TOKEN"},
+		"other port":        {ID: "sp", Kind: "super-productivity", Host: "127.0.0.1:9999", TokenEnv: "SP_API_TOKEN"},
+		"project scope":     {ID: "sp", Kind: "super-productivity", Scope: "proj", TokenEnv: "SP_API_TOKEN"},
+		"missing token_env": {ID: "sp", Kind: "super-productivity"},
+		"path":              {ID: "sp", Kind: "super-productivity", TokenEnv: "SP_API_TOKEN", Path: "/x"},
+	} {
+		c := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{s}}
+		if e := c.Validate(t.TempDir()); e == nil {
+			t.Fatal("accepted", name)
+		}
+	}
+}

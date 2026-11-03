@@ -78,12 +78,32 @@ func (f *Fetcher) Fetch(ctx context.Context, cfg config.Source) (model.Snapshot,
 		if cfg.Host != linearAuthority || !config.LinearScope.MatchString(cfg.Scope) || cfg.TokenEnv == "" {
 			return snapshot, failure("invalid_config", "Linear source requires scope workspace-url-key/TEAMKEY and token_env")
 		}
-		token, tokenErr := linearToken(cfg.TokenEnv)
+		token, tokenErr := envToken(cfg.TokenEnv, "Linear")
 		if tokenErr != nil {
 			return snapshot, tokenErr
 		}
 		state := &fetchState{http: f.HTTP, token: token, cfg: cfg, observed: time.Now().UTC()}
 		snapshot, err = state.linear(ctx)
+	case "super-productivity":
+		if cfg.Host == "" {
+			cfg.Host = spAuthority
+		}
+		if cfg.Scope == "" {
+			cfg.Scope = spScope
+		}
+		if cfg.Host != spAuthority || cfg.Scope != spScope || cfg.TokenEnv == "" {
+			return snapshot, failure("invalid_config", "Super Productivity source requires host 127.0.0.1:3876, scope local and token_env")
+		}
+		token, tokenErr := envToken(cfg.TokenEnv, "Super Productivity")
+		if tokenErr != nil {
+			return snapshot, tokenErr
+		}
+		doer := f.HTTP
+		if doer == nil {
+			doer = loopbackHTTP
+		}
+		state := &fetchState{http: doer, token: token, cfg: cfg, observed: time.Now().UTC()}
+		snapshot, err = state.superProductivity(ctx)
 	case "github", "gitlab":
 		if cfg.Host == "" {
 			cfg.Host = cfg.Kind + ".com"

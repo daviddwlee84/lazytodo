@@ -6,7 +6,6 @@ Future candidates, not commitments. Current behavior lives in [README.md](README
 - [ ] **[M] Beads / td snapshot converters** — Explicit-file conversion only; preserve namespace, observation time and coverage. → [research](backlog/source-adapters.md)
 
 ## P2
-- [ ] **[M] Super Productivity reader** — Reuse the Linear HTTP/token_env transport for opt-in desktop loopback REST; completed/archive coverage and stale offline cache. → [research](backlog/source-adapters.md)
 - [ ] **[M] personal-ops selected-store reader** — Explicit minimal file/export contract; do not load private context or activate roles. → [research](backlog/source-adapters.md)
 - [ ] **[L] Explicit intake and dispatch** — One reviewed destination, idempotency, native receipt and uncertain-outcome handling. → [research](backlog/routing.md)
 - [ ] **[L] Google Tasks reader** — Read-only OAuth, tasklist identities, hidden/completed/deleted coverage, date-only due. → [research](backlog/source-adapters.md)
@@ -27,5 +26,7 @@ Future candidates, not commitments. Current behavior lives in [README.md](README
 - [ ] **[?/M] Optional translation and repo language conventions** — Evaluate daviddwlee84/translate for local display or reviewed English drafts; preserve original and require opt-in for external processing. → [research](backlog/translation.md)
 
 ## Done
+
+- ✅ [2026-11-04] [P2/M] Super Productivity reader — Desktop loopback REST reader (token_env Bearer, proxy-free, no redirects); active/done/archived tasks, closed app = unavailable with cache kept; fixture-verified against v19.3.1 source. → [docs](docs/sources.md#super-productivity)
 
 - ✅ [2026-11-04] [P1/L] Linear reader — Team-scoped GraphQL reader with token_env credential, archived coverage, separate assignee/delegate; fixture-verified against published SDK schema, no live workspace. → [docs](docs/sources.md#linear)

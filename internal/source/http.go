@@ -20,10 +20,17 @@ var defaultHTTP HTTPDoer = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-// post sends one fixed request under the same aggregate page/byte budget as
+// loopbackHTTP never consults proxy settings, so a local-app token cannot be
+// forwarded to a configured proxy, and it refuses redirects.
+var loopbackHTTP HTTPDoer = &http.Client{
+	Transport:     &http.Transport{Proxy: nil, DisableKeepAlives: true},
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// request sends one fixed request under the same aggregate page/byte budget as
 // CLI reads. The caller supplies a fixed endpoint; the body is never surfaced
-// in errors.
-func (s *fetchState) post(ctx context.Context, endpoint string, header http.Header, payload []byte) ([]byte, http.Header, int, error) {
+// in errors. A nil payload sends no body.
+func (s *fetchState) request(ctx context.Context, method, endpoint string, header http.Header, payload []byte) ([]byte, http.Header, int, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, 0, err
 	}
@@ -34,7 +41,11 @@ func (s *fetchState) post(ctx context.Context, endpoint string, header http.Head
 		return nil, nil, 0, failure("size_limit", "Source exceeded the 64 MiB read limit; previous data retained")
 	}
 	s.pages++
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	var reader io.Reader
+	if payload != nil {
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return nil, nil, 0, failure("invalid_config", "Source request could not be constructed")
 	}
@@ -51,6 +62,9 @@ func (s *fetchState) post(ctx context.Context, endpoint string, header http.Head
 		return nil, nil, 0, ctxErr
 	}
 	if err != nil {
+		if s.cfg.Kind == "super-productivity" {
+			return nil, nil, 0, spUnavailable()
+		}
 		return nil, nil, 0, failure("network", "Source API request failed; verify network access; previous data retained")
 	}
 	defer resp.Body.Close()

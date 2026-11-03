@@ -16,9 +16,11 @@ Static research on 2026-11-02: installed td 0.69.0 corresponds to `359fd41c17729
 
 Export semantics differ: td export JSON wraps issue plus logs/handoffs/dependencies/files; Beads export is typed JSONL (issue or memory). `--all` has different meanings between list and export. Preserve declared coverage and ignore non-work-item records explicitly.
 
-## Super Productivity
+## Super Productivity (shipped 2026-11-04)
 
-[Local REST API](https://github.com/super-productivity/super-productivity/wiki/3.01-API#3-local-rest-api): opt-in Electron desktop service at loopback port 3876, Bearer token, GET tasks/projects/tags. Reuse the `HTTPDoer`/`post` transport and `token_env` credential pattern from the Linear reader; loopback needs its own fixed host/port validation. Not web/mobile. Include completed/archive coverage deliberately; a closed desktop app means unavailable plus retained cache, not empty. Confirm loopback security/token storage and response limits.
+Current behavior lives in [docs/sources.md](../docs/sources.md#super-productivity). Facts checked against the app source at v19.3.1 (2026-11-04): the listener binds `127.0.0.1:3876` with a Host-header allowlist and rejects web Origins; `GET /tasks` filters `source` (active|archived|all) and `includeDone` in memory with no pagination; envelope `{ok,data}` / `{ok:false,error:{code}}`; the renderer times out at 15 s; `/projects` returns `projectService.list$` and `/tags` returns `tagService.tags$`. Task timestamps are epoch milliseconds (`created`, `updated` or legacy `modified`, `doneOn`, `wontDoOn`).
+
+Open follow-ups: a per-project scope (`scope = <projectId>`) if one profile mixes work and personal tasks; due/deadline dates have no model field yet; a live check against a running app is still pending. The API is read/write, so lazytodo uses only the four GET routes above.
 
 ## Google Tasks / Apple Reminders
 
