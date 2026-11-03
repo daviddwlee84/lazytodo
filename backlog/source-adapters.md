@@ -1,10 +1,12 @@
 # Additional source adapters
 
-Status: deferred. GitHub Issues and project-scoped GitLab Work Items are the first native readers; the existing canonical snapshot reader is a transport bridge, not native compatibility with every export format.
+Status: deferred. GitHub Issues, project-scoped GitLab Work Items and team-scoped Linear issues are the native readers; the existing canonical snapshot reader is a transport bridge, not native compatibility with every export format.
 
-## Next: Linear
+## Linear (shipped 2026-11-04)
 
-Preserve workspace/team scope, native status and labels. [Assignment documentation](https://linear.app/docs/assigning-issues) distinguishes human responsibility from agent delegation. `assignees` and `delegates` must remain separate; this documentation does not establish API field names. Verify GraphQL schema, pagination, authentication, rate limiting and archived coverage before implementation.
+Current behavior lives in [docs/sources.md](../docs/sources.md#linear). Schema facts were checked against Linear's published SDK schema (`linear/linear` `packages/sdk/src/schema.graphql`, master, 2026-11-04): `Issue.delegate: User` (the agent delegated to work on an issue), `Issue.trashed`, `includeArchived` and `orderBy: PaginationOrderBy {createdAt, updatedAt}` on `issues`, `StringComparator.eqIgnoreCase`, and `WorkflowState.type` ∈ triage/backlog/unstarted/started/completed/canceled/duplicate. Personal keys use `Authorization: <key>` without Bearer. Rate limits: 429 + `RATELIMITED`, `Retry-After` seconds, `X-RateLimit-*-Reset` in epoch milliseconds.
+
+Open follow-ups: team discovery and setup (TODO "Linear discover and setup"); per-issue label overflow beyond 50 currently fails the fetch; an OAuth or keychain credential source would need a separate review; a live-workspace check is still pending. Incremental `updatedAt` deltas belong with "Incremental native fetch".
 
 ## Beads / td
 
@@ -16,7 +18,7 @@ Export semantics differ: td export JSON wraps issue plus logs/handoffs/dependenc
 
 ## Super Productivity
 
-[Local REST API](https://github.com/super-productivity/super-productivity/wiki/3.01-API#3-local-rest-api): opt-in Electron desktop service at loopback port 3876, Bearer token, GET tasks/projects/tags. Not web/mobile. Include completed/archive coverage deliberately; a closed desktop app means unavailable plus retained cache, not empty. Confirm loopback security/token storage and response limits.
+[Local REST API](https://github.com/super-productivity/super-productivity/wiki/3.01-API#3-local-rest-api): opt-in Electron desktop service at loopback port 3876, Bearer token, GET tasks/projects/tags. Reuse the `HTTPDoer`/`post` transport and `token_env` credential pattern from the Linear reader; loopback needs its own fixed host/port validation. Not web/mobile. Include completed/archive coverage deliberately; a closed desktop app means unavailable plus retained cache, not empty. Confirm loopback security/token storage and response limits.
 
 ## Google Tasks / Apple Reminders
 

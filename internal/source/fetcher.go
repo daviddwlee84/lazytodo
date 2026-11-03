@@ -39,14 +39,20 @@ func invalidResponse() error {
 	return failure("invalid_response", "Source returned malformed or incomplete data; previous data retained")
 }
 
-// Fetcher is safe for concurrent Fetch calls if its injected Runner is too.
-// A nil Runner uses the bounded, noninteractive command runner.
-type Fetcher struct{ Runner Runner }
+// Fetcher is safe for concurrent Fetch calls if its injected Runner/HTTP are too.
+// A nil Runner uses the bounded, noninteractive command runner; a nil HTTP uses
+// a client that refuses redirects.
+type Fetcher struct {
+	Runner Runner
+	HTTP   HTTPDoer
+}
 
 func New() *Fetcher { return &Fetcher{Runner: commandRunner{limit: maxBytes}} }
 
 type fetchState struct {
 	runner   Runner
+	http     HTTPDoer
+	token    string
 	cfg      config.Source
 	observed time.Time
 	bytes    int
@@ -61,12 +67,24 @@ func (f *Fetcher) Fetch(ctx context.Context, cfg config.Source) (model.Snapshot,
 	}
 	var snapshot model.Snapshot
 	var err error
-	if cfg.Kind == "snapshot" {
+	switch cfg.Kind {
+	case "snapshot":
 		snapshot, err = readSnapshot(ctx, cfg)
-	} else {
-		if cfg.Kind != "github" && cfg.Kind != "gitlab" {
-			return snapshot, failure("unsupported_source", "Unsupported source kind")
+	case "linear":
+		if cfg.Host == "" {
+			cfg.Host = linearAuthority
 		}
+		cfg.Host = strings.ToLower(strings.TrimSuffix(cfg.Host, "."))
+		if cfg.Host != linearAuthority || !config.LinearScope.MatchString(cfg.Scope) || cfg.TokenEnv == "" {
+			return snapshot, failure("invalid_config", "Linear source requires scope workspace-url-key/TEAMKEY and token_env")
+		}
+		token, tokenErr := linearToken(cfg.TokenEnv)
+		if tokenErr != nil {
+			return snapshot, tokenErr
+		}
+		state := &fetchState{http: f.HTTP, token: token, cfg: cfg, observed: time.Now().UTC()}
+		snapshot, err = state.linear(ctx)
+	case "github", "gitlab":
 		if cfg.Host == "" {
 			cfg.Host = cfg.Kind + ".com"
 		}
@@ -84,6 +102,8 @@ func (f *Fetcher) Fetch(ctx context.Context, cfg config.Source) (model.Snapshot,
 		} else {
 			snapshot, err = state.gitlab(ctx)
 		}
+	default:
+		return snapshot, failure("unsupported_source", "Unsupported source kind")
 	}
 	if err != nil {
 		return model.Snapshot{}, err

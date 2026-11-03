@@ -70,7 +70,8 @@ This supports the small substring-search baseline, not a claim about 100k-item d
 - Live authenticated GitHub or GitLab service compatibility and actual account coverage; fixture tests do not establish a minimum supported self-hosted GitLab release.
 - Linux runtime/PTY and CI execution: a Linux binary was cross-built; the macOS/Linux CI matrix is authored but has not run on a remote service.
 - Real browser opening or native authentication flows; no external browser was launched by the verification suite.
-- Linear, native Beads/td, Super Productivity, Google Tasks, Reminders, personal-ops exchange or translation: these remain backlog, not tested integrations.
+- Live Linear workspace compatibility: the Linear reader is verified against fictional fixtures that follow the published SDK schema (2026-11-04), not an authenticated workspace.
+- Native Beads/td, Super Productivity, Google Tasks, Reminders, personal-ops exchange or translation: these remain backlog, not tested integrations.
 
 ## Mouse, preview copy and markdown follow-up
 

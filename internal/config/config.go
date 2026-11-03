@@ -24,6 +24,9 @@ type Source struct {
 	Disabled        bool      `toml:"disabled" json:"disabled"`
 	RefreshInterval string    `toml:"refresh_interval" json:"refresh_interval,omitempty"`
 	PriorityLabels  *[]string `toml:"priority_labels,omitempty" json:"priority_labels,omitempty"`
+	// TokenEnv names the environment variable holding an API token for sources
+	// without a native CLI (Linear). The secret itself never belongs in TOML.
+	TokenEnv string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 }
 
 // Fingerprint identifies the fetch target independently of the source alias.
@@ -177,6 +180,10 @@ func effective(c Config, path string, color, interval *string) (Config, error) {
 
 var alias = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var host = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*(?::[0-9]+)?$`)
+var envName = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,127}$`)
+
+// LinearScope is "workspace-url-key/TEAMKEY".
+var LinearScope = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}/[A-Za-z0-9]{1,16}$`)
 
 func validInterval(v string) bool {
 	d, e := time.ParseDuration(v)
@@ -208,7 +215,27 @@ func (c *Config) Validate(base string) error {
 				seen[name] = true
 			}
 		}
+		if s.Kind != "linear" && s.TokenEnv != "" {
+			return fmt.Errorf("source %s: token_env applies only to linear sources", s.ID)
+		}
 		switch s.Kind {
+		case "linear":
+			if s.Host == "" {
+				s.Host = "linear.app"
+			}
+			s.Host = strings.TrimSuffix(strings.ToLower(s.Host), ".")
+			if s.Host != "linear.app" {
+				return fmt.Errorf("source %s: linear host must be linear.app", s.ID)
+			}
+			if !LinearScope.MatchString(s.Scope) {
+				return fmt.Errorf("source %s: linear scope must be workspace-url-key/TEAMKEY", s.ID)
+			}
+			if !envName.MatchString(s.TokenEnv) {
+				return fmt.Errorf("source %s: linear requires token_env naming an environment variable (e.g. LINEAR_API_KEY)", s.ID)
+			}
+			if s.Path != "" {
+				return fmt.Errorf("source %s: path applies only to snapshots", s.ID)
+			}
 		case "github", "gitlab":
 			if s.Host == "" {
 				s.Host = s.Kind + ".com"
@@ -241,7 +268,7 @@ func (c *Config) Validate(base string) error {
 				return fmt.Errorf("source %s: snapshot host is declared in its item origins", s.ID)
 			}
 		default:
-			return fmt.Errorf("source %s: supported kinds are github, gitlab, snapshot", s.ID)
+			return fmt.Errorf("source %s: supported kinds are github, gitlab, linear, snapshot", s.ID)
 		}
 		if !s.Disabled {
 			// Case-insensitive for forges: Owner/Repo and owner/repo would claim
@@ -287,6 +314,13 @@ mouse = true # TUI click/wheel/drag-copy; false (or --mouse=false, or M) keeps n
 # host = "gitlab.com"
 # scope = "group/project"
 # disabled = true # Replace the host/scope, then explicitly enable it.
+
+# [[sources]]
+# id = "work-linear"
+# kind = "linear"
+# scope = "workspace-url-key/TEAMKEY"
+# token_env = "LINEAR_API_KEY" # Name of the env var holding a personal API key; never the key itself.
+# disabled = true # Replace the scope, export the variable, then explicitly enable it.
 
 # [[sources]]
 # id = "snapshot"

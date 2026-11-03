@@ -250,6 +250,14 @@ func TestSourceURL(t *testing.T) {
 	if _, e := SourceURL(i); e != nil {
 		t.Fatal(e)
 	}
+	i.Origin.Provider, i.Origin.Authority = "linear", "linear.app"
+	if _, e := SourceURL(i); e == nil {
+		t.Fatal("accepted linear item with a foreign URL host")
+	}
+	i.URL = "https://linear.app/acme/issue/ENG-1/x"
+	if _, e := SourceURL(i); e != nil {
+		t.Fatal(e)
+	}
 }
 
 func BenchmarkQuery10k(b *testing.B) {

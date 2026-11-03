@@ -1,6 +1,6 @@
 # Sources and compatibility
 
-Normal fetch contacts configured sources only. Run bare `sources --json` for cached status, not a live probe. Explicit `init` or `sources discover` additionally reads account/repository metadata from the user-selected host, without fetching task content. Run `fetch` explicitly or allow TUI's configured interval after registration. Authentication stays with native tools; install/login separately for the exact hostname. No tokens belong in lazytodo TOML.
+Normal fetch contacts configured sources only. Run bare `sources --json` for cached status, not a live probe. Explicit `init` or `sources discover` additionally reads account/repository metadata from the user-selected host, without fetching task content. Run `fetch` explicitly or allow TUI's configured interval after registration. Forge authentication stays with native tools; install/login separately for the exact hostname. Linear, which has no native CLI, reads a personal API key from an environment variable that the config names (`token_env`). No tokens belong in lazytodo TOML.
 
 ## Source initialization
 
@@ -34,6 +34,32 @@ Fixture tests verify the actual fixed query/data shapes against researched offic
 
 References: [Project declaration](https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/graphql/types/project_type.rb), [WorkItem type](https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/graphql/types/work_item_type.rb), [label widget](https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/graphql/types/work_items/widgets/labels_type.rb).
 
+## Linear
+
+```toml
+[[sources]]
+id = "linear-eng"
+kind = "linear"
+scope = "workspace-url-key/ENG"   # workspace URL key / team key
+token_env = "LINEAR_API_KEY"      # the variable's NAME; export the key in your shell
+```
+
+`host` defaults to and must be `linear.app`. Create a personal API key in Linear (Settings → Security & access) and export it under the named variable before `fetch` or the TUI. The key is read only for an explicit or interval fetch: never by query/show/bare commands, never written to config, cache or errors. A missing variable reports `auth_missing` and sends no request.
+
+lazytodo posts two fixed GraphQL queries to `https://api.linear.app/graphql` with `Authorization: <key>` and refuses redirects. First it reads `viewer.organization` and resolves the team by key. A key from a different workspace reports `scope_mismatch`, and an unknown or renamed team key reports `not_found`; neither is treated as an empty team. Then it reads `issues(filter: team id, includeArchived: true, orderBy: createdAt, first: 50)` and follows cursors.
+
+- **Coverage:** every issue in the team, including completed, canceled and archived issues. Trashed issues are skipped. Sub-issues are separate issues. Projects, cycles, comments and custom views are not read.
+- **Identity:** `linear` / `linear.app` / organization ID / issue UUID. `ENG-123` is only the display ref.
+- **State:** the native workflow state name is kept (for example "In Review"). The open/closed mapping comes from the state type: triage, backlog, unstarted and started are open; completed, canceled and duplicate are closed.
+- **People:** the human `assignee` and the agent `delegate` are kept separate (`Assignees` and `Delegates`). A null value is known-empty.
+- **Labels:** up to 50 per issue, with native names and colors. An issue with more labels fails the fetch rather than silently truncating.
+
+Rate limits (HTTP 429 or a `RATELIMITED` GraphQL code) honor `Retry-After` or Linear's millisecond reset headers. GraphQL errors, schema-validation errors, malformed data, a repeated cursor or a duplicate issue ID invalidate the whole attempt and keep the previous snapshot. The 64 MiB and page limits are shared with forge sources.
+
+Fixture tests follow Linear's published SDK schema (`packages/sdk/src/schema.graphql`, checked 2026-11-04: `Issue.delegate`, `trashed`, `includeArchived` and `PaginationOrderBy`). They do not exercise a live workspace. There is no discovery wizard yet; add Linear sources with `config edit`.
+
+References: [Linear GraphQL API](https://linear.app/developers/graphql), [rate limiting](https://linear.app/developers/rate-limiting), [assigning and delegating issues](https://linear.app/docs/assigning-issues).
+
 ## Canonical snapshot file
 
 ```toml
@@ -54,4 +80,4 @@ lazytodo never runs exporters, initializes/migrates/syncs trackers, or reads Bea
 
 ## Deferred
 
-[TODO](../TODO.md) and [adapter research](../backlog/source-adapters.md) cover Linear, Beads/td, Super Productivity, Google Tasks, Reminders and selected personal-ops exchange. Translation is separately opt-in research, not a fetch/display side effect.
+[TODO](../TODO.md) and [adapter research](../backlog/source-adapters.md) cover Linear discovery, Beads/td, Super Productivity, Google Tasks, Reminders and selected personal-ops exchange. Translation is separately opt-in research, not a fetch/display side effect.

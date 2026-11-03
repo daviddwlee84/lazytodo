@@ -75,3 +75,35 @@ func TestDuplicateTargetIgnoresForgeCase(t *testing.T) {
 		t.Fatal("disabled duplicate rejected:", e)
 	}
 }
+
+func TestLinearSourceValidation(t *testing.T) {
+	ok := Source{ID: "ln", Kind: "linear", Scope: "acme/ENG", TokenEnv: "LINEAR_API_KEY"}
+	c := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{ok}}
+	if e := c.Validate(t.TempDir()); e != nil || c.Sources[0].Host != "linear.app" {
+		t.Fatal("valid linear source rejected:", e, c.Sources[0].Host)
+	}
+	for name, s := range map[string]Source{
+		"other host":        {ID: "ln", Kind: "linear", Host: "linear.example", Scope: "acme/ENG", TokenEnv: "LINEAR_API_KEY"},
+		"team only":         {ID: "ln", Kind: "linear", Scope: "ENG", TokenEnv: "LINEAR_API_KEY"},
+		"nested scope":      {ID: "ln", Kind: "linear", Scope: "acme/ENG/x", TokenEnv: "LINEAR_API_KEY"},
+		"uppercase urlkey":  {ID: "ln", Kind: "linear", Scope: "Acme/ENG", TokenEnv: "LINEAR_API_KEY"},
+		"missing token_env": {ID: "ln", Kind: "linear", Scope: "acme/ENG"},
+		"token as value":    {ID: "ln", Kind: "linear", Scope: "acme/ENG", TokenEnv: "lin_api_secret"},
+		"path":              {ID: "ln", Kind: "linear", Scope: "acme/ENG", TokenEnv: "LINEAR_API_KEY", Path: "/x"},
+		"token_env on gh":   {ID: "gh", Kind: "github", Scope: "o/r", TokenEnv: "GH_TOKEN"},
+	} {
+		c := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{s}}
+		if e := c.Validate(t.TempDir()); e == nil {
+			t.Fatal("accepted", name)
+		}
+	}
+	dup := Config{RefreshInterval: "5m", Color: "auto", Sources: []Source{ok, {ID: "b", Kind: "linear", Scope: "acme/eng", TokenEnv: "OTHER_KEY"}}}
+	if e := dup.Validate(t.TempDir()); e == nil {
+		t.Fatal("case-variant duplicate linear team accepted")
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	os.WriteFile(path, []byte("[[sources]]\nid='ln'\nkind='linear'\nscope='acme/ENG'\ntoken_env='LINEAR_API_KEY'\n"), 0600)
+	if c, e := Load(path, true); e != nil || c.Sources[0].TokenEnv != "LINEAR_API_KEY" {
+		t.Fatal("linear TOML not loaded:", e)
+	}
+}

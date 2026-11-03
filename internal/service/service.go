@@ -373,7 +373,7 @@ func SourceURL(i model.Item) (string, error) {
 	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
 		return "", Fail("unsafe_url", "item has no permitted HTTP(S) source URL")
 	}
-	if (i.Origin.Provider == "github" || i.Origin.Provider == "gitlab") && !strings.EqualFold(u.Host, i.Origin.Authority) {
+	if (i.Origin.Provider == "github" || i.Origin.Provider == "gitlab" || i.Origin.Provider == "linear") && !strings.EqualFold(u.Host, i.Origin.Authority) {
 		return "", Fail("unsafe_url", "URL host differs from the source authority")
 	}
 	return u.String(), nil

@@ -115,8 +115,11 @@ func sourceID(s Source) string {
 		slug = "source"
 	}
 	prefix := "gh"
-	if s.Kind == "gitlab" {
+	switch s.Kind {
+	case "gitlab":
 		prefix = "gl"
+	case "linear":
+		prefix = "ln"
 	}
 	return prefix + "-" + slug + "-" + model.Digest(SourceKey(s))[:8]
 }
